@@ -1,21 +1,9 @@
 import os
-import platform
-import subprocess
-import threading
-from shutil import copyfile
 
 import time
 import requests
 import logging
-from PIL import Image
-from glob import glob
-from tqdm import tqdm
-
-from modules import shared
 from modules.paths import models_path
-from scripts.easyphoto_config import (id_path, user_id_outpath_samples,
-                                  validation_prompt)
-from scripts.preprocess import preprocess_images
 
 # Set the level of the logger
 log_level = os.environ.get('LOG_LEVEL', 'INFO')

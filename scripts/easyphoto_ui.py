@@ -2,14 +2,11 @@ import os
 
 import gradio as gr
 import glob
-import requests
 
 from scripts.easyphoto_infer import easyphoto_infer_forward
-from scripts.easyphoto_config import easyphoto_outpath_samples, id_path, user_id_outpath_samples
+from scripts.easyphoto_config import get_ui_paths
 from scripts.easyphoto_train import easyphoto_train_forward, DEFAULT_CACHE_LOG_FILE
 from modules import script_callbacks, shared
-from modules.paths import models_path
-import time
 
 gradio_compat = True
 
@@ -22,10 +19,10 @@ try:
 except ImportError:
     pass
 
+easyphoto_img2img_samples, easyphoto_outpath_samples, user_id_outpath_samples, cache_outpath_samples, id_path = get_ui_paths()
 
 class ToolButton(gr.Button, gr.components.FormComponent):
     """Small button with single emoji as text, fits inside gradio forms"""
-
     def __init__(self, **kwargs):
         super().__init__(variant="tool", 
                          elem_classes=kwargs.pop('elem_classes', []) + ["cnet-toolbutton"], 
@@ -39,8 +36,8 @@ def upload_file(files, current_files):
     return file_paths
 
 def refresh_display():
-    cache_log_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), DEFAULT_CACHE_LOG_FILE)
-    lines_limit = 3
+    cache_log_file_path = os.path.join(cache_outpath_samples, DEFAULT_CACHE_LOG_FILE)
+    lines_limit = 1
     try:
         with open(cache_log_file_path, "r", newline="") as f:
             lines = []
@@ -68,6 +65,7 @@ def on_ui_tabs():
             with gr.Blocks():
                 with gr.Row():
                     uuid = gr.Text(label="User_ID", value="", visible=False)
+                    webui_id = gr.Text(label="Webui_ID", value="", visible=False)
 
                     with gr.Column():
                         gr.Markdown('Training photos')
@@ -182,6 +180,7 @@ def on_ui_tabs():
                                 _js="ask_for_style_name",
                                 inputs=[
                                     dummy_component,
+                                    webui_id,
                                     uuid,
                                     resolution, val_and_checkpointing_steps, max_train_steps, steps_per_photos, train_batch_size, gradient_accumulation_steps, dataloader_num_workers, learning_rate, rank, network_alpha, instance_images,
                                 ],
@@ -189,6 +188,8 @@ def on_ui_tabs():
                                 
         with gr.TabItem('Inference'):
             dummy_component = gr.Label(visible=False)
+            webui_id = gr.Text(label="Webui_ID", value="", visible=False)
+
             training_templates = glob.glob(os.path.join(os.path.abspath(os.path.dirname(__file__)).replace("scripts", "models"), 'training_templates/*.jpg'))
             infer_templates = glob.glob(os.path.join(os.path.abspath(os.path.dirname(__file__)).replace("scripts", "models"), 'infer_templates/*.jpg'))
             preset_template = list(training_templates) + list(infer_templates)
@@ -341,7 +342,7 @@ def on_ui_tabs():
                     
                 display_button.click(
                     fn=easyphoto_infer_forward,
-                    inputs=[selected_template_images, init_image, additional_prompt, 
+                    inputs=[webui_id, selected_template_images, init_image, additional_prompt, 
                             before_face_fusion_ratio, after_face_fusion_ratio, first_diffusion_steps, first_denoising_strength, second_diffusion_steps, second_denoising_strength, \
                             seed, crop_face_preprocess, apply_face_fusion_before, apply_face_fusion_after, color_shift_middle, color_shift_last, model_selected_tab, *uuids],
                     outputs=[infer_progress, output_images]
