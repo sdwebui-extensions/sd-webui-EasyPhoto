@@ -14,7 +14,6 @@ from glob import glob
 from tqdm import tqdm
 
 from modules import shared
-from modules.paths import models_path
 from modules.api import api
 from scripts.easyphoto_config import get_backend_paths, validation_prompt
 from scripts.preprocess import preprocess_images
@@ -25,6 +24,7 @@ python_executable_path = sys.executable
 
 # Attention! Output of js is str or list, not float or int
 def easyphoto_train_forward(
+    sd_model_checkpoint: str,
     id_task: str,
     webui_id: str,
     user_id: str,
@@ -34,11 +34,11 @@ def easyphoto_train_forward(
     instance_images: list,
     *args
 ):  
-
+    
     if shared.cmd_opts.just_ui:
-        print(instance_images)
         simple_req = dict(
-            uid = id_task,
+            sd_model_checkpoint = sd_model_checkpoint,
+            id_task = id_task,
             webui_id = shared.cmd_opts.uid,
             user_id = user_id, 
             resolution = resolution,
@@ -57,26 +57,11 @@ def easyphoto_train_forward(
         )
         url = '/'.join([shared.cmd_opts.server_path, 'easyphoto/easyphoto_train_forward'])
         data = requests.post(url, json=simple_req)
-        print(data.text)
         comments = json.loads(data.text)['message']
         return comments
     else:
-        check_files_exists_and_download()
-        easyphoto_img2img_samples, easyphoto_outpath_samples, user_id_outpath_samples, cache_outpath_samples, id_path = get_backend_paths(webui_id)
-
-        if user_id == "" or user_id is None:
-            return "User id cannot be set to empty."
-        if user_id == "none" :
-            return "User id cannot be set to none."
-        
-        if os.path.exists(id_path):
-            with open(id_path, "r") as f:
-                ids = f.readlines()
-            ids = [_id.strip() for _id in ids]
-        else:
-            ids = []
-        if user_id in ids:
-            return "User id 不能重复。"
+        models_path, easyphoto_img2img_samples, easyphoto_outpath_samples, user_id_outpath_samples, cache_outpath_samples, id_path = get_backend_paths(webui_id)
+        check_files_exists_and_download(models_path)
         
         # 模板的地址
         training_templates_path = os.path.join(os.path.abspath(os.path.dirname(__file__)).replace("scripts", "models"), "training_templates")
@@ -93,7 +78,7 @@ def easyphoto_train_forward(
         # 训练权重保存
         weights_save_path       = os.path.join(user_id_outpath_samples, user_id, "user_weights")
         webui_save_path         = os.path.join(models_path, f"Lora/{user_id}.safetensors")
-        webui_load_path         = os.path.join(models_path, f"Stable-diffusion/Chilloutmix-Ni-pruned-fp16-fix.safetensors")
+        webui_load_path         = os.path.join(models_path, f"Stable-diffusion", sd_model_checkpoint)
         sd15_save_path          = os.path.join(os.path.abspath(os.path.dirname(__file__)).replace("scripts", "models"), "stable-diffusion-v1-5")
         
         os.makedirs(original_backup_path, exist_ok=True)
@@ -122,7 +107,7 @@ def easyphoto_train_forward(
 
         train_kohya_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train_kohya/train_lora.py")
         print("train_file_path : ", train_kohya_path)
-        
+        print(webui_load_path)
         # extensions/sd-webui-EasyPhoto/train_kohya_log.txt, use to cache log and flush to UI
         cache_log_file_path = os.path.join(cache_outpath_samples, DEFAULT_CACHE_LOG_FILE)
         print("cache_log_file_path   : ", cache_log_file_path)

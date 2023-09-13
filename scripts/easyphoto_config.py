@@ -3,15 +3,17 @@ from modules.paths import data_path
 from modules import script_callbacks, shared
 
 # save_dirs
-data_dir                        = shared.cmd_opts.data_dir
+data_dir = shared.cmd_opts.data_dir
 
 def get_backend_paths(uuid):
-    if uuid is not None:
+    if uuid is not None and uuid != "":
+        models_path                     = os.path.join(data_dir, "data-" + str(uuid), "models")
         easyphoto_img2img_samples       = os.path.join(data_dir, "data-" + str(uuid), 'outputs/img2img-images')
         easyphoto_outpath_samples       = os.path.join(data_dir, "data-" + str(uuid), 'outputs/easyphoto-outputs')
         user_id_outpath_samples         = os.path.join(data_dir, "data-" + str(uuid), 'outputs/easyphoto-user-id-infos')
         cache_outpath_samples           = os.path.join(data_dir, "data-" + str(uuid), 'outputs/easyphoto-cache')
     else:
+        models_path                     = os.path.join(data_dir, "models")
         easyphoto_img2img_samples       = os.path.join(data_dir, 'outputs/img2img-images')
         easyphoto_outpath_samples       = os.path.join(data_dir, 'outputs/easyphoto-outputs')
         user_id_outpath_samples         = os.path.join(data_dir, 'outputs/easyphoto-user-id-infos')
@@ -21,9 +23,10 @@ def get_backend_paths(uuid):
         os.makedirs(cache_outpath_samples, exist_ok=True)
     id_path                         = os.path.join(cache_outpath_samples, "ids.txt")
 
-    return easyphoto_img2img_samples, easyphoto_outpath_samples, user_id_outpath_samples, cache_outpath_samples, id_path
+    return models_path, easyphoto_img2img_samples, easyphoto_outpath_samples, user_id_outpath_samples, cache_outpath_samples, id_path
     
 def get_ui_paths():
+    models_path                     = os.path.join(data_dir, "models")
     easyphoto_img2img_samples       = os.path.join(data_dir, 'outputs/img2img-images')
     easyphoto_outpath_samples       = os.path.join(data_dir, 'outputs/easyphoto-outputs')
     user_id_outpath_samples         = os.path.join(data_dir, 'outputs/easyphoto-user-id-infos')
@@ -32,7 +35,7 @@ def get_ui_paths():
         os.makedirs(cache_outpath_samples, exist_ok=True)
     id_path                         = os.path.join(cache_outpath_samples, "ids.txt")
 
-    return easyphoto_img2img_samples, easyphoto_outpath_samples, user_id_outpath_samples, cache_outpath_samples, id_path
+    return models_path, easyphoto_img2img_samples, easyphoto_outpath_samples, user_id_outpath_samples, cache_outpath_samples, id_path
 
 # prompts 
 validation_prompt   = "easyphoto_face, easyphoto, 1person"

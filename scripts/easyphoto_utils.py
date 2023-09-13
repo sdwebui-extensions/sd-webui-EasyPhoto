@@ -3,7 +3,6 @@ import os
 import time
 import requests
 import logging
-from modules.paths import models_path
 
 # Set the level of the logger
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -29,7 +28,7 @@ def urldownload_progressbar(url, filepath):
     except:
         print('Error!')
 
-def check_files_exists_and_download():
+def check_files_exists_and_download(models_path):
     urls        = [
         "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/ChilloutMix-ni-fp16.safetensors", 
         "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/control_v11p_sd15_openpose.pth",

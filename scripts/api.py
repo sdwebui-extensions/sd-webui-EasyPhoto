@@ -1,42 +1,9 @@
-import hashlib
-import os
-import platform
-import subprocess
-import sys
-import threading
-from glob import glob
-from shutil import copyfile
-
 import gradio as gr
-import numpy as np
 from fastapi import FastAPI
 from modules.api import api
 from modules.api.models import *
-from modules.generation_parameters_copypaste import \
-    create_override_settings_dict
-from modules.paths import models_path
-from PIL import Image
-from scripts.easyphoto_config import validation_prompt
 from scripts.easyphoto_infer import *
 from scripts.easyphoto_train import *
-
-
-DEFAULT_CACHE_LOG_FILE = "train_kohya_log.txt"
-python_executable_path = sys.executable
-
-def encode_to_base64(image):
-    if type(image) is str:
-        return image
-    elif type(image) is Image.Image:
-        return api.encode_pil_to_base64(image)
-    elif type(image) is np.ndarray:
-        return encode_np_to_base64(image)
-    else:
-        return ""
-
-def encode_np_to_base64(image):
-    pil = Image.fromarray(image)
-    return api.encode_pil_to_base64(pil)
 
 
 def easyphoto_train_forward_api(_: gr.Blocks, app: FastAPI):
@@ -44,6 +11,7 @@ def easyphoto_train_forward_api(_: gr.Blocks, app: FastAPI):
     def _easyphoto_train_forward_api(
         imgs: dict,
     ):
+        sd_model_checkpoint     = imgs.get("sd_model_checkpoint", "")
         id_task                 = imgs.get("id_task", "")
         webui_id                = imgs.get("webui_id", "")
         user_id                 = imgs.get("user_id", "tmp")
@@ -63,6 +31,7 @@ def easyphoto_train_forward_api(_: gr.Blocks, app: FastAPI):
 
         instance_images         = [api.decode_base64_to_image(init_image) for init_image in instance_images]
         message = easyphoto_train_forward(
+            sd_model_checkpoint,
             id_task,
             webui_id,
             user_id,
@@ -79,6 +48,7 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
     def _easyphoto_infer_forward_api(
         imgs: dict,
     ):
+        sd_model_checkpoint         = imgs.get("sd_model_checkpoint", "")
         webui_id                    = imgs.get("webui_id", "")
         selected_template_images    = imgs.get("selected_template_images", [])
         init_image                  = imgs.get("init_image", None)
@@ -105,7 +75,7 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
         init_image                  = None if init_image is None else api.decode_base64_to_image(init_image)
         
         comment, outputs = easyphoto_infer_forward(
-            webui_id, selected_template_images, init_image, additional_prompt, \
+            sd_model_checkpoint, webui_id, selected_template_images, init_image, additional_prompt, \
             before_face_fusion_ratio, after_face_fusion_ratio, first_diffusion_steps, first_denoising_strength, second_diffusion_steps, second_denoising_strength, \
             seed, crop_face_preprocess, apply_face_fusion_before, apply_face_fusion_after, color_shift_middle, color_shift_last, tabs, *user_ids
         )
