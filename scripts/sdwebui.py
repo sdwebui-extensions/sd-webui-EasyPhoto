@@ -247,7 +247,11 @@ def i2i_inpaint_call(
         origin_sd_vae               = ""
 
     sd_model_checkpoint = get_closet_checkpoint_match(sd_model_checkpoint).model_name
-    sd_vae              = os.path.basename(find_vae_near_checkpoint(sd_vae))
+    vae_near_checkpoint = find_vae_near_checkpoint(sd_vae)
+    if vae_near_checkpoint is not None:
+        sd_vae = os.path.basename(vae_near_checkpoint)
+    else:
+        sd_vae = None
 
     p_img2img = StableDiffusionProcessingImg2Img(
         sd_model=origin_sd_model_checkpoint,
@@ -296,22 +300,27 @@ def i2i_inpaint_call(
     
     if sd_model_checkpoint != origin_sd_model_checkpoint:
         reload_model('sd_model_checkpoint', sd_model_checkpoint)
-    if origin_sd_vae != sd_vae:
-        reload_model('sd_vae', sd_vae)
+    
+    if sd_vae is not None:
+        if origin_sd_vae != sd_vae:
+            reload_model('sd_vae', sd_vae)
 
     processed = processing.process_images(p_img2img)
 
     if sd_model_checkpoint != origin_sd_model_checkpoint:
         reload_model('sd_model_checkpoint', origin_sd_model_checkpoint)
-    if origin_sd_vae != sd_vae:
-        reload_model('sd_vae', origin_sd_vae)
+    if sd_vae is not None:
+        if origin_sd_vae != sd_vae:
+            reload_model('sd_vae', origin_sd_vae)
 
-    # get the generate image!
-    h_0, w_0, c_0 = np.shape(processed.images[0])
-    h_1, w_1, c_1 = np.shape(processed.images[1])
-
-    if w_1 != w_0 and len(processed.images) > 1:
-        gen_image = processed.images[1]
+    if len(processed.images) > 1:
+        # get the generate image!
+        h_0, w_0, c_0 = np.shape(processed.images[0])
+        h_1, w_1, c_1 = np.shape(processed.images[1])
+        if w_1 != w_0:
+            gen_image = processed.images[1]
+        else:
+            gen_image = processed.images[0]
     else:
         gen_image = processed.images[0]
     return gen_image

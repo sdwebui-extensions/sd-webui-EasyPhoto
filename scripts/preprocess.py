@@ -28,6 +28,7 @@ def compare_jpg_with_face_id(embedding_list):
     scores = [np.dot(emb, pivot_feature)[0][0] for emb in embedding_list]
     return scores
 
+
 def preprocess_images(images_save_path, json_save_path, validation_prompt, inputs_dir, ref_image_path):
     # face embedding
     providers           = ["CPUExecutionProvider"]
@@ -43,13 +44,15 @@ def preprocess_images(images_save_path, json_save_path, validation_prompt, input
     salient_detect          = pipeline(Tasks.semantic_segmentation, 'damo/cv_u2net_salient-detection')
     # skin retouching
     try:
-        skin_retouching = pipeline('skin-retouching-torch', model='damo/cv_unet_skin_retouching_torch', model_revision='v1.0.2')
+        skin_retouching     = pipeline('skin-retouching-torch', model='damo/cv_unet_skin_retouching_torch', model_revision='v1.0.2')
     except:
+        skin_retouching     = None
         logging.info("Skin Retouching model load error, but pass.")
     # portrait enhancement
     try:
         portrait_enhancement = pipeline(Tasks.image_portrait_enhancement, model='damo/cv_gpen_image-portrait-enhancement')
     except:
+        portrait_enhancement = None
         logging.info("Portrait Enhancement model load error, but pass.")
     
     # jpg list
@@ -65,6 +68,7 @@ def preprocess_images(images_save_path, json_save_path, validation_prompt, input
                 continue
             _image_path = os.path.join(inputs_dir, jpg)
             image       = Image.open(_image_path)
+
             h, w, c     = np.shape(image)
 
             retinaface_boxes, retinaface_keypoints, _ = call_face_crop(retinaface_detection, image, 3, prefix="tmp")
@@ -79,10 +83,11 @@ def preprocess_images(images_save_path, json_save_path, validation_prompt, input
             angle = 0 if x==0 else abs(math.atan(y/x)*180/math.pi)
             angle = (90 - angle)/ 90 
 
-            # width judge
+            # face size judge
             face_width  = (retinaface_box[2] - retinaface_box[0]) / (3 - 1)
             face_height = (retinaface_box[3] - retinaface_box[1]) / (3 - 1)
-            if face_width / w < 1/8 or face_height / h < 1/8:
+            if min(face_width, face_height) < 128:
+                print("Face size in {} is small than 128. Ignore it.".format(jpg))
                 continue
 
             # face crop
@@ -99,6 +104,9 @@ def preprocess_images(images_save_path, json_save_path, validation_prompt, input
             selected_paths.append(_image_path)
         except:
             pass
+    
+    if len(face_id_scores) == 0:
+        return "No faces detected. Please increase the size of the face in the upload photos."
 
     # Filter reference faces based on scores, considering quality scores, similarity scores, and angle scores
     face_id_scores      = compare_jpg_with_face_id(face_id_scores)
@@ -169,7 +177,7 @@ def preprocess_images(images_save_path, json_save_path, validation_prompt, input
         if np.sum(np.array(mask)) != 0:
             images.append(mask_sub_image)
 
-    # write resuilts
+    # write results
     for index, base64_pilimage in enumerate(images):
         image = base64_pilimage.convert("RGB")
         image.save(os.path.join(images_save_path, str(index) + ".jpg"))
@@ -198,4 +206,8 @@ def preprocess_images(images_save_path, json_save_path, validation_prompt, input
 
     del retinaface_detection
     del salient_detect
+    del skin_retouching
+    del portrait_enhancement
+    del face_recognition
+    del face_analyser
     torch.cuda.empty_cache()
