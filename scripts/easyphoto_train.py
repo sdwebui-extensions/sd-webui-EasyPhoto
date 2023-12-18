@@ -1,7 +1,9 @@
 import os
 import platform
 import subprocess
-import threading
+import sys
+import numpy as np
+from glob import glob
 from shutil import copyfile
 
 import time
@@ -16,31 +18,58 @@ from tqdm import tqdm
 from modules import shared
 from modules.api import api
 from scripts.easyphoto_config import get_backend_paths, validation_prompt
-from scripts.preprocess import preprocess_images
 from scripts.easyphoto_utils import check_files_exists_and_download
+from modules.sd_models_config import config_sdxl
+from PIL import Image, ImageOps
 
-DEFAULT_CACHE_LOG_FILE = "train_kohya_log.txt"
+from scripts.easyphoto_config import (
+    validation_prompt,
+    validation_prompt_scene,
+)
+from scripts.easyphoto_utils import check_files_exists_and_download, check_id_valid, check_scene_valid, unload_models
+from scripts.sdwebui import get_checkpoint_type, unload_sd
+from scripts.train_kohya.utils.lora_utils import convert_lora_to_safetensors
+
 python_executable_path = sys.executable
+# base, portrait, sdxl
+check_hash = {}
+
 
 # Attention! Output of js is str or list, not float or int
+@unload_sd()
 def easyphoto_train_forward(
+    webui_id: str,
     sd_model_checkpoint: str,
     id_task: str,
-    webui_id: str,
     user_id: str,
-    resolution: int, val_and_checkpointing_steps: int, max_train_steps: int, steps_per_photos: int,
-    train_batch_size: int, gradient_accumulation_steps: int, dataloader_num_workers: int, learning_rate: float, 
-    rank: int, network_alpha: int,
+    train_mode_choose: str,
+    resolution: int,
+    val_and_checkpointing_steps: int,
+    max_train_steps: int,
+    steps_per_photos: int,
+    train_batch_size: int,
+    gradient_accumulation_steps: int,
+    dataloader_num_workers: int,
+    learning_rate: float,
+    rank: int,
+    network_alpha: int,
+    validation: bool,
     instance_images: list,
-    *args
-):  
-    
+    enable_rl: bool,
+    max_rl_time: float,
+    timestep_fraction: float,
+    skin_retouching_bool: bool,
+    training_prefix_prompt: str,
+    crop_ratio: float,
+    *args,
+):
     if shared.cmd_opts.just_ui:
         simple_req = dict(
+            webui_id = shared.cmd_opts.uid,
             sd_model_checkpoint = sd_model_checkpoint,
             id_task = id_task,
-            webui_id = shared.cmd_opts.uid,
             user_id = user_id, 
+            train_mode_choose = train_mode_choose,
             resolution = resolution,
             val_and_checkpointing_steps = val_and_checkpointing_steps,
             max_train_steps = max_train_steps,
@@ -52,136 +81,392 @@ def easyphoto_train_forward(
             learning_rate = learning_rate,
             rank = rank,
             network_alpha = network_alpha,
+            validation = validation,
             instance_images = [api.encode_pil_to_base64(Image.open(init_image['name'])) for init_image in instance_images],
+            enable_rl = enable_rl,
+            max_rl_time = max_rl_time,
+            timestep_fraction = timestep_fraction,
+            skin_retouching_bool = skin_retouching_bool,
+            training_prefix_prompt = training_prefix_prompt,
+            crop_ratio = crop_ratio,
             args = args
         )
         url = '/'.join([shared.cmd_opts.server_path, 'easyphoto/easyphoto_train_forward'])
         data = requests.post(url, json=simple_req)
         comments = json.loads(data.text)['message']
         return comments
+
+    data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
+        easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
+        cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_backend_paths(webui_id)
+    
+    global check_hash
+
+    if user_id == "" or user_id is None:
+        return "User id cannot be set to empty."
+    if user_id == "none":
+        return "User id cannot be set to none."
+
+    ids = []
+    if os.path.exists(user_id_outpath_samples):
+        _ids = os.listdir(user_id_outpath_samples)
+        for _id in _ids:
+            if check_id_valid(_id, user_id_outpath_samples, models_path):
+                ids.append(_id)
+    _scenes = os.listdir(os.path.join(models_path, "Lora"))
+    for _scene in _scenes:
+        if check_scene_valid(_scene, models_path):
+            ids.append(os.path.splitext(_scene)[0])
+    ids = sorted(ids)
+
+    if user_id in ids:
+        return "User id non-repeatability."
+
+    if int(rank) < int(network_alpha):
+        return "The network alpha {} must not exceed rank {}. " "It will result in an unintended LoRA.".format(network_alpha, rank)
+
+    check_files_exists_and_download(check_hash.get("base", True), "base")
+    check_files_exists_and_download(check_hash.get("portrait", True), "portrait")
+    check_hash["base"] = False
+    check_hash["portrait"] = False
+
+    checkpoint_type = get_checkpoint_type(sd_model_checkpoint)
+    if checkpoint_type == 2:
+        return "EasyPhoto does not support the SD2 checkpoint: {}.".format(sd_model_checkpoint)
+    sdxl_pipeline_flag = True if checkpoint_type == 3 else False
+
+    if sdxl_pipeline_flag:
+        check_files_exists_and_download(check_hash.get("sdxl", True), "sdxl")
+        check_hash["sdxl"] = False
+
+    # check if user want to train Scene Lora
+    train_scene_lora_bool = True if train_mode_choose == "Train Scene Lora" else False
+    cache_outpath_samples = scene_id_outpath_samples if train_scene_lora_bool else user_id_outpath_samples
+
+    # Check conflicted arguments in SDXL training.
+    if sdxl_pipeline_flag:
+        if enable_rl:
+            return "EasyPhoto does not support RL with the SDXL checkpoint: {}.".format(sd_model_checkpoint)
+        if train_scene_lora_bool:
+            return "EasyPhoto does not support train scene with the SDXL checkpoint: {}.".format(sd_model_checkpoint)
+        if int(resolution) < 1024:
+            return "The resolution for SDXL Training needs to be 1024."
+        if validation:
+            # We do not ensemble models by validation in SDXL training.
+            return "To save training time and VRAM, please turn off validation in SDXL training."
+
+    # Template address
+    training_templates_path = os.path.join(easyphoto_models_path, "training_templates")
+    # Raw data backup
+    original_backup_path = os.path.join(cache_outpath_samples, user_id, "original_backup")
+    # Reference backup of face
+    if train_scene_lora_bool:
+        ref_image_path = os.path.join(models_path, f"Lora/{user_id}.jpg")
     else:
-        models_path, easyphoto_img2img_samples, easyphoto_outpath_samples, user_id_outpath_samples, cache_outpath_samples, id_path = get_backend_paths(webui_id)
-        check_files_exists_and_download(models_path)
-        
-        # 模板的地址
-        training_templates_path = os.path.join(os.path.abspath(os.path.dirname(__file__)).replace("scripts", "models"), "training_templates")
-        # 原始数据备份
-        original_backup_path    = os.path.join(user_id_outpath_samples, user_id, "original_backup")
-        # 人脸的参考备份
-        ref_image_path          = os.path.join(user_id_outpath_samples, user_id, "ref_image.jpg")
+        ref_image_path = os.path.join(cache_outpath_samples, user_id, "ref_image.jpg")
 
-        # 训练数据保存
-        user_path               = os.path.join(user_id_outpath_samples, user_id, "processed_images")
-        images_save_path        = os.path.join(user_id_outpath_samples, user_id, "processed_images", "train")
-        json_save_path          = os.path.join(user_id_outpath_samples, user_id, "processed_images", "metadata.jsonl")
+    # Training data retention
+    user_path = os.path.join(cache_outpath_samples, user_id, "processed_images")
+    images_save_path = os.path.join(cache_outpath_samples, user_id, "processed_images", "train")
+    json_save_path = os.path.join(cache_outpath_samples, user_id, "processed_images", "metadata.jsonl")
 
-        # 训练权重保存
-        weights_save_path       = os.path.join(user_id_outpath_samples, user_id, "user_weights")
-        webui_save_path         = os.path.join(models_path, f"Lora/{user_id}.safetensors")
-        webui_load_path         = os.path.join(models_path, f"Stable-diffusion", sd_model_checkpoint)
-        sd15_save_path          = os.path.join(os.path.abspath(os.path.dirname(__file__)).replace("scripts", "models"), "stable-diffusion-v1-5")
-        
-        os.makedirs(original_backup_path, exist_ok=True)
-        os.makedirs(user_path, exist_ok=True)
-        os.makedirs(images_save_path, exist_ok=True)
-        os.makedirs(os.path.dirname(os.path.abspath(webui_save_path)), exist_ok=True)
+    # Training weight saving
+    weights_save_path = os.path.join(cache_outpath_samples, user_id, "user_weights")
+    webui_save_path = os.path.join(models_path, f"Lora/{user_id}.safetensors")
+    webui_load_path = os.path.join(models_path, f"Stable-diffusion", sd_model_checkpoint)
+    sd_save_path = os.path.join(easyphoto_models_path, "stable-diffusion-v1-5")
+    if sdxl_pipeline_flag:
+        sd_save_path = sd_save_path.replace("stable-diffusion-v1-5", "stable-diffusion-xl/stabilityai_stable_diffusion_xl_base_1.0")
+    if enable_rl and not train_scene_lora_bool:
+        ddpo_weight_save_path = os.path.join(cache_outpath_samples, user_id, "ddpo_weights")
+        face_lora_path = os.path.join(weights_save_path, f"best_outputs/{user_id}.safetensors")
+        ddpo_webui_save_path = os.path.join(models_path, f"Lora/ddpo_{user_id}.safetensors")
 
-        max_train_steps         = int(min(len(instance_images) * int(steps_per_photos), int(max_train_steps)))
+    os.makedirs(original_backup_path, exist_ok=True)
+    os.makedirs(user_path, exist_ok=True)
+    os.makedirs(images_save_path, exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(webui_save_path)), exist_ok=True)
 
-        for index, user_image in enumerate(instance_images):
-            try:
-                image = Image.open(user_image['name']).convert("RGB")
-            except:
-                image = user_image.convert("RGB")
-            image.save(os.path.join(original_backup_path, str(index) + ".jpg"))
-            
-        sub_threading = threading.Thread(target=preprocess_images, args=(images_save_path, json_save_path, validation_prompt, original_backup_path, ref_image_path,))
-        sub_threading.start()
-        sub_threading.join()
+    max_train_steps = int(min(len(instance_images) * int(steps_per_photos), int(max_train_steps)))
 
-        train_images = glob(os.path.join(images_save_path, "*.jpg"))
-        if len(train_images) == 0:
-            return "Failed to obtain preprocessed images, please check the preprocessing process"
-        if not os.path.exists(json_save_path):
-            return "Failed to obtain preprocessed metadata.jsonl, please check the preprocessing process."
+    for index, user_image in enumerate(instance_images):
+        image = Image.open(user_image["name"])
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image.save(os.path.join(original_backup_path, str(index) + ".jpg"))
 
+    local_validation_prompt = validation_prompt if not train_scene_lora_bool else training_prefix_prompt + ", " + validation_prompt_scene
+    # preprocess
+    preprocess_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "preprocess.py")
+    command = [
+        f"{python_executable_path}",
+        f"{preprocess_path}",
+        f"--images_save_path={images_save_path}",
+        f"--json_save_path={json_save_path}",
+        f"--validation_prompt={local_validation_prompt}",
+        f"--inputs_dir={original_backup_path}",
+        f"--ref_image_path={ref_image_path}",
+        f"--crop_ratio={crop_ratio}",
+    ]
+    if skin_retouching_bool:
+        command += ["--skin_retouching_bool"]
+    if train_scene_lora_bool:
+        command += ["--train_scene_lora_bool"]
+    try:
+        subprocess.run(command, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing the command: {e}")
+
+    # check preprocess results
+    train_images = glob(os.path.join(images_save_path, "*.jpg"))
+    if len(train_images) == 0:
+        return "Failed to obtain preprocessed images, please check the preprocessing process"
+    if not os.path.exists(json_save_path):
+        return "Failed to obtain preprocessed metadata.jsonl, please check the preprocessing process."
+
+    if not sdxl_pipeline_flag:
         train_kohya_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train_kohya/train_lora.py")
-        print("train_file_path : ", train_kohya_path)
-        print(webui_load_path)
-        # extensions/sd-webui-EasyPhoto/train_kohya_log.txt, use to cache log and flush to UI
-        cache_log_file_path = os.path.join(cache_outpath_samples, DEFAULT_CACHE_LOG_FILE)
-        print("cache_log_file_path   : ", cache_log_file_path)
-        if platform.system() == 'Windows':
-            pwd = os.getcwd()
-            dataloader_num_workers = 0 # for solve multi process bug
+    else:
+        train_kohya_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train_kohya/train_lora_sd_XL.py")
+    print("train_file_path : ", train_kohya_path)
+    if enable_rl and not train_scene_lora_bool:
+        train_ddpo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train_kohya/train_ddpo.py")
+        print("train_ddpo_path : ", train_kohya_path)
+
+    # outputs/easyphoto-tmp/train_kohya_log.txt, use to cache log and flush to UI
+    print("cache_log_file_path:", cache_log_file_path)
+    if not os.path.exists(os.path.dirname(cache_log_file_path)):
+        os.makedirs(os.path.dirname(cache_log_file_path), exist_ok=True)
+
+    # Extra arguments to run SDXL training.
+    env = None
+    if sdxl_pipeline_flag:
+        original_config = config_sdxl
+        sdxl_model_dir = os.path.abspath(os.path.dirname(__file__)).replace("scripts", "models/stable-diffusion-xl")
+        pretrained_vae_model_name_or_path = os.path.join(sdxl_model_dir, "madebyollin_sdxl_vae_fp16_fix")
+        # SDXL training requires some config files in openai/clip-vit-large-patch14 and laion/CLIP-ViT-bigG-14-laion2B-39B-b160k.
+        # We provide them in extensions/sd-webui-EasyPhoto/models. Thus, we need set some environment variables for transformers.
+        # if we pass `env` in subprocess.run, the environment variables in the child process will be reset and different from Web UI.
+        env = os.environ.copy()
+        env["TRANSFORMERS_OFFLINE"] = "1"
+        env["TRANSFORMERS_CACHE"] = sdxl_model_dir
+
+    unload_models()
+    random_seed = np.random.randint(1, 1e6)
+    if platform.system() == "Windows":
+        pwd = os.getcwd()
+        dataloader_num_workers = 0  # for solve multi process bug
+        command = [
+            f"{python_executable_path}",
+            "-m",
+            "accelerate.commands.launch",
+            "--mixed_precision=fp16",
+            "--main_process_port=3456",
+            f"{train_kohya_path}",
+            f"--pretrained_model_name_or_path={os.path.relpath(sd_save_path, pwd)}",
+            f"--pretrained_model_ckpt={os.path.relpath(webui_load_path, pwd)}",
+            f"--train_data_dir={os.path.relpath(user_path, pwd)}",
+            "--caption_column=text",
+            f"--resolution={resolution}",
+            "--random_flip",
+            f"--train_batch_size={train_batch_size}",
+            f"--gradient_accumulation_steps={gradient_accumulation_steps}",
+            f"--dataloader_num_workers={dataloader_num_workers}",
+            f"--max_train_steps={max_train_steps}",
+            f"--checkpointing_steps={val_and_checkpointing_steps}",
+            f"--learning_rate={learning_rate}",
+            "--lr_scheduler=constant",
+            "--lr_warmup_steps=0",
+            "--train_text_encoder",
+            f"--seed={random_seed}",
+            f"--rank={rank}",
+            f"--network_alpha={network_alpha}",
+            f"--validation_prompt={local_validation_prompt}",
+            f"--validation_steps={val_and_checkpointing_steps}",
+            f"--output_dir={os.path.relpath(weights_save_path, pwd)}",
+            f"--logging_dir={os.path.relpath(weights_save_path, pwd)}",
+            "--enable_xformers_memory_efficient_attention",
+            "--mixed_precision=fp16",
+            f"--template_dir={os.path.relpath(training_templates_path, pwd)}",
+            "--template_mask",
+            "--merge_best_lora_based_face_id",
+            f"--merge_best_lora_name={user_id}",
+            f"--cache_log_file={cache_log_file_path}",
+        ]
+        if validation and not train_scene_lora_bool:
+            command += ["--validation"]
+        if sdxl_pipeline_flag:
+            command += [f"--original_config={original_config}"]
+            command += [f"--pretrained_vae_model_name_or_path={pretrained_vae_model_name_or_path}"]
+        if train_scene_lora_bool:
+            command += ["--train_scene_lora_bool"]
+        try:
+            subprocess.run(command, env=env, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error executing the command: {e}")
+
+        # Reinforcement learning after LoRA training.
+        if enable_rl and not train_scene_lora_bool:
+            # The DDPO (LoRA) distributed training is unstable due to a known accelerate/diffusers issue. Set `num_processes` to 1.
+            # See https://github.com/kvablack/ddpo-pytorch/issues/10 for details.
             command = [
-                f'{python_executable_path}', '-m', 'accelerate.commands.launch', '--mixed_precision=fp16', "--main_process_port=3456", f'{train_kohya_path}',
-                f'--pretrained_model_name_or_path={os.path.relpath(sd15_save_path, pwd)}',
-                f'--pretrained_model_ckpt={os.path.relpath(webui_load_path, pwd)}', 
-                f'--train_data_dir={os.path.relpath(user_path, pwd)}',
-                '--caption_column=text', 
-                f'--resolution={resolution}',
-                '--random_flip',
-                f'--train_batch_size={train_batch_size}',
-                f'--gradient_accumulation_steps={gradient_accumulation_steps}',
-                f'--dataloader_num_workers={dataloader_num_workers}', 
-                f'--max_train_steps={max_train_steps}',
-                f'--checkpointing_steps={val_and_checkpointing_steps}', 
-                f'--learning_rate={learning_rate}',
-                '--lr_scheduler=constant',
-                '--lr_warmup_steps=0', 
-                '--train_text_encoder', 
-                '--seed=42', 
-                f'--rank={rank}',
-                f'--network_alpha={network_alpha}', 
-                f'--validation_prompt={validation_prompt}', 
-                f'--validation_steps={val_and_checkpointing_steps}', 
-                f'--output_dir={os.path.relpath(weights_save_path, pwd)}', 
-                f'--logging_dir={os.path.relpath(weights_save_path, pwd)}', 
-                '--enable_xformers_memory_efficient_attention', 
-                '--mixed_precision=fp16', 
-                f'--template_dir={os.path.relpath(training_templates_path, pwd)}', 
-                '--template_mask', 
-                '--merge_best_lora_based_face_id', 
-                f'--merge_best_lora_name={user_id}',
-                f'--cache_log_file={cache_log_file_path}'
+                f"{python_executable_path}",
+                "-m",
+                "accelerate.commands.launch",
+                "--mixed_precision=fp16",
+                "--main_process_port=4567",
+                "--num_processes=1",
+                f"{train_ddpo_path}",
+                f"--run_name={user_id}",
+                f"--logdir={os.path.relpath(ddpo_weight_save_path, pwd)}",
+                f"--cache_log_file={cache_log_file_path}",
+                f"--pretrained_model_name_or_path={os.path.relpath(sd_save_path, pwd)}",
+                f"--pretrained_model_ckpt={os.path.relpath(webui_load_path, pwd)}",
+                f"--face_lora_path={os.path.relpath(face_lora_path, pwd)}",
+                f"--sample_batch_size=4",
+                f"--sample_num_batches_per_epoch=2",
+                f"--sample_num_steps=50",
+                f"--timestep_fraction={timestep_fraction}",
+                f"--train_batch_size=1",
+                f"--gradient_accumulation_steps=8",
+                f"--learning_rate=0.0001",
+                f"--seed={random_seed}",
+                "--use_lora",
+                f"--rank=4",
+                f"--cfg",
+                f"--allow_tf32",
+                f"--num_epochs=200",
+                f"--save_freq=1",
+                f"--reward_fn=faceid_retina",
+                f"--target_image_dir={os.path.relpath(images_save_path, pwd)}",
+                f"--per_prompt_stat_tracking",
             ]
+            max_rl_time = int(float(max_rl_time) * 60 * 60)
+            os.environ["MAX_RL_TIME"] = str(max_rl_time)
             try:
+                print("Start RL (reinforcement learning). The max time of RL is {}.".format(max_rl_time))
+                # Since `accelerate` spawns a new process, set `timeout` in `subprocess.run` does not take effects.
                 subprocess.run(command, check=True)
             except subprocess.CalledProcessError as e:
                 print(f"Error executing the command: {e}")
-        else:
-            os.system(
-                f'''
-                accelerate launch --mixed_precision="fp16" --main_process_port=3456 {train_kohya_path} \
-                --pretrained_model_name_or_path="{sd15_save_path}" \
-                --pretrained_model_ckpt="{webui_load_path}" \
-                --train_data_dir="{user_path}" --caption_column="text" \
-                --resolution={resolution} --random_flip --train_batch_size={train_batch_size} --gradient_accumulation_steps={gradient_accumulation_steps} --dataloader_num_workers={dataloader_num_workers} \
-                --max_train_steps={max_train_steps} --checkpointing_steps={val_and_checkpointing_steps} \
-                --learning_rate={learning_rate} --lr_scheduler="constant" --lr_warmup_steps=0 \
-                --train_text_encoder \
-                --seed=42 \
-                --rank={rank} --network_alpha={network_alpha} \
-                --validation_prompt="{validation_prompt}" \
-                --validation_steps={val_and_checkpointing_steps} \
-                --output_dir="{weights_save_path}" \
-                --logging_dir="{weights_save_path}" \
-                --enable_xformers_memory_efficient_attention \
-                --mixed_precision='fp16' \
-                --template_dir="{training_templates_path}" \
-                --template_mask \
-                --merge_best_lora_based_face_id \
-                --merge_best_lora_name="{user_id}" \
-                --cache_log_file="{cache_log_file_path}"
-                '''
-            )
-        
-        best_weight_path = os.path.join(weights_save_path, f"best_outputs/{user_id}.safetensors")
-        if not os.path.exists(best_weight_path):
-            return "Failed to obtain Lora after training, please check the training process."
+            finally:
+                # The cached log file will be cleared when times out or errors occur.
+                with open(cache_log_file_path, "w") as _:
+                    pass
+    else:
+        command = [
+            f"{python_executable_path}",
+            "-m",
+            "accelerate.commands.launch",
+            "--mixed_precision=fp16",
+            "--main_process_port=3456",
+            f"{train_kohya_path}",
+            f"--pretrained_model_name_or_path={sd_save_path}",
+            f"--pretrained_model_ckpt={webui_load_path}",
+            f"--train_data_dir={user_path}",
+            "--caption_column=text",
+            f"--resolution={resolution}",
+            "--random_flip",
+            f"--train_batch_size={train_batch_size}",
+            f"--gradient_accumulation_steps={gradient_accumulation_steps}",
+            f"--dataloader_num_workers={dataloader_num_workers}",
+            f"--max_train_steps={max_train_steps}",
+            f"--checkpointing_steps={val_and_checkpointing_steps}",
+            f"--learning_rate={learning_rate}",
+            "--lr_scheduler=constant",
+            "--lr_warmup_steps=0",
+            "--train_text_encoder",
+            f"--seed={random_seed}",
+            f"--rank={rank}",
+            f"--network_alpha={network_alpha}",
+            f"--validation_prompt={local_validation_prompt}",
+            f"--validation_steps={val_and_checkpointing_steps}",
+            f"--output_dir={weights_save_path}",
+            f"--logging_dir={weights_save_path}",
+            "--enable_xformers_memory_efficient_attention",
+            "--mixed_precision=fp16",
+            f"--template_dir={training_templates_path}",
+            "--template_mask",
+            "--merge_best_lora_based_face_id",
+            f"--merge_best_lora_name={user_id}",
+            f"--cache_log_file={cache_log_file_path}",
+        ]
+        if validation and not train_scene_lora_bool:
+            command += ["--validation"]
+        if sdxl_pipeline_flag:
+            command += [f"--original_config={original_config}"]
+            command += [f"--pretrained_vae_model_name_or_path={pretrained_vae_model_name_or_path}"]
+        if train_scene_lora_bool:
+            command += ["--train_scene_lora_bool"]
+        try:
+            subprocess.run(command, env=env, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error executing the command: {e}")
 
-        copyfile(best_weight_path, webui_save_path)
-        with open(id_path, "a") as f:
-            f.write(f"{user_id}\n")
-        return "The training has been completed."
+        # Reinforcement learning after LoRA training.
+        if enable_rl and not train_scene_lora_bool:
+            # The DDPO (LoRA) distributed training is unstable due to a known accelerate/diffusers issue. Set `num_processes` to 1.
+            # See https://github.com/kvablack/ddpo-pytorch/issues/10 for details.
+            command = [
+                f"{python_executable_path}",
+                "-m",
+                "accelerate.commands.launch",
+                "--mixed_precision=fp16",
+                "--main_process_port=4567",
+                "--num_processes=1",
+                f"{train_ddpo_path}",
+                f"--run_name={user_id}",
+                f"--logdir={ddpo_weight_save_path}",
+                f"--cache_log_file={cache_log_file_path}",
+                f"--pretrained_model_name_or_path={sd_save_path}",
+                f"--pretrained_model_ckpt={webui_load_path}",
+                f"--face_lora_path={face_lora_path}",
+                f"--sample_batch_size=4",
+                f"--sample_num_batches_per_epoch=2",
+                f"--sample_num_steps=50",
+                f"--timestep_fraction={timestep_fraction}",
+                f"--train_batch_size=1",
+                f"--gradient_accumulation_steps=8",
+                f"--learning_rate=0.0001",
+                f"--seed={random_seed}",
+                "--use_lora",
+                f"--rank=4",
+                f"--cfg",
+                f"--allow_tf32",
+                f"--num_epochs=200",
+                f"--save_freq=1",
+                f"--reward_fn=faceid_retina",
+                f"--target_image_dir={images_save_path}",
+                f"--per_prompt_stat_tracking",
+            ]
+            max_rl_time = int(float(max_rl_time) * 60 * 60)
+            os.environ["MAX_RL_TIME"] = str(max_rl_time)
+            try:
+                print("Start RL (reinforcement learning). The max time of RL is {}.".format(max_rl_time))
+                # Since `accelerate` spawns a new process, set `timeout` in `subprocess.run` does not take effects.
+                subprocess.run(command, check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Error executing the command: {e}")
+            finally:
+                # The cached log file will be cleared when times out or errors occur.
+                with open(cache_log_file_path, "w") as _:
+                    pass
+
+    best_weight_path = os.path.join(weights_save_path, f"best_outputs/{user_id}.safetensors")
+    # Currently, SDXL training doesn't support the model selection and ensemble. We use the final
+    # trained model as the best for simplicity.
+    if sdxl_pipeline_flag:
+        best_weight_path = os.path.join(weights_save_path, "pytorch_lora_weights.safetensors")
+    if not os.path.exists(best_weight_path):
+        return "Failed to obtain Lora after training, please check the training process."
+
+    copyfile(best_weight_path, webui_save_path)
+
+    if enable_rl and not train_scene_lora_bool:
+        # Currently, the best (reward_mean) ddpo lora checkpoint will be selected and saved to the WebUI Lora folder.
+        best_output_dir = os.path.join(ddpo_weight_save_path, "best_outputs")
+        if not os.path.exists(best_output_dir):
+            return "Failed to obtain checkpoints after reinforcement learning, please check the training process."
+        ddpo_lora_path = os.path.join(best_output_dir, "pytorch_lora_weights.bin")
+        convert_lora_to_safetensors(ddpo_lora_path, ddpo_webui_save_path)
+
+    return "The training has been completed."
