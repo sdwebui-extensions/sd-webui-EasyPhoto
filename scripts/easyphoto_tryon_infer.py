@@ -3,6 +3,8 @@ import os
 import platform
 import subprocess
 import sys
+import requests
+import json
 from glob import glob
 from shutil import copyfile
 
@@ -13,15 +15,13 @@ import torch
 from modules.images import save_image
 from modules.paths import models_path
 from modules.shared import opts
+from modules import shared
 from PIL import Image
 from segment_anything import SamPredictor, sam_model_registry
 
 from scripts.easyphoto_config import (
-    cache_log_file_path,
-    cloth_id_outpath_samples,
-    easyphoto_outpath_samples,
+    get_backend_paths,
     validation_tryon_prompt,
-    tryon_gallery_dir,
     DEFAULT_CLOTH_LORA,
 )
 from scripts.easyphoto_infer import inpaint
@@ -81,16 +81,67 @@ def easyphoto_tryon_infer_forward(
     cloth_uuid,
     max_train_steps,
 ):
+    if shared.cmd_opts.just_ui:
+        if template_image is not None:
+            template_image = {
+                "image": api.encode_pil_to_base64(Image.fromarray(np.uint8(template_image['image']))),
+                "mask": api.encode_pil_to_base64(Image.fromarray(np.uint8(template_image['mask']))),
+            }
+        if reference_image is not None:
+            reference_image = {
+                "image": api.encode_pil_to_base64(Image.fromarray(np.uint8(reference_image['image']))),
+                "mask": api.encode_pil_to_base64(Image.fromarray(np.uint8(reference_image['mask']))),
+            }
+
+        simple_req = dict(
+            webui_id = shared.cmd_opts.uid,
+            sd_model_checkpoint = sd_model_checkpoint,
+            template_image = template_image, 
+            template_mask = None if template_mask is None else api.encode_pil_to_base64(Image.fromarray(np.uint8(template_mask))), 
+            selected_cloth_images = selected_cloth_images,
+            reference_image = reference_image, 
+            reference_mask = None if reference_mask is None else api.encode_pil_to_base64(Image.fromarray(np.uint8(reference_mask))), 
+            additional_prompt = additional_prompt,
+            seed = seed,
+            first_diffusion_steps = first_diffusion_steps,
+            first_denoising_strength = first_denoising_strength,
+            lora_weight = lora_weight,
+            iou_threshold = iou_threshold,
+            angle = angle,
+            azimuth = azimuth,
+            ratio = ratio,
+            dx = dx,
+            dy = dy,
+            batch_size = batch_size,
+            optimize_angle_and_ratio = optimize_angle_and_ratio,
+            refine_bound = refine_bound,
+            ref_image_selected_tab = ref_image_selected_tab,
+            cloth_uuid = cloth_uuid,
+            max_train_steps = max_train_steps,
+        )
+        url = '/'.join([shared.cmd_opts.server_path, 'easyphoto/easyphoto_tryon_infer_forward'])
+        data = requests.post(url, json=simple_req)
+        
+        comments = json.loads(data.text)['message']
+        return_res = [api.decode_base64_to_image(output) for output in json.loads(data.text)['return_res']]
+        template_mask = None if template_mask is None else api.decode_base64_to_image(template_mask)
+        reference_mask = None if template_mask is None else api.decode_base64_to_image(reference_mask)
+        return comments, return_res, template_mask, reference_mask
+    
+    data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
+        easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
+        cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_backend_paths(webui_id)
+    
     global check_hash, sam_predictor
     # change system ckpt if not match
     reload_sd_model_vae(sd_model_checkpoint, "vae-ft-mse-840000-ema-pruned.ckpt")
 
-    check_files_exists_and_download(check_hash.get("base", True), "base")
-    check_files_exists_and_download(check_hash.get("add_tryon", True), "add_tryon")
+    check_files_exists_and_download(check_hash.get("base", True), "base", webui_id)
+    check_files_exists_and_download(check_hash.get("add_tryon", True), "add_tryon", webui_id)
     check_hash["base"] = False
     check_hash["add_tryon"] = False
 
-    checkpoint_type = get_checkpoint_type(sd_model_checkpoint)
+    checkpoint_type = get_checkpoint_type(sd_model_checkpoint, models_path)
     if checkpoint_type == 2 or checkpoint_type == 3:
         info = "Tryon does not support the SD2 / SDXL checkpoint."
         ep_logger.error(info)
@@ -317,6 +368,7 @@ def easyphoto_tryon_infer_forward(
             except subprocess.CalledProcessError as e:
                 ep_logger.error(f"Error executing the command: {e}")
 
+        sam_predictor = None
         best_weight_path = os.path.join(weights_save_path, f"pytorch_lora_weights.safetensors")
         if not os.path.exists(best_weight_path):
             return ("Failed to obtain Lora after training, please check the training process.", [], template_mask, reference_mask)
@@ -650,6 +702,25 @@ def easyphoto_tryon_infer_forward(
 
 
 def easyphoto_tryon_mask_forward(input_image, img_type):
+    if shared.cmd_opts.just_ui:
+        if input_image is not None:
+            input_image = {
+                "image": api.encode_pil_to_base64(Image.fromarray(np.uint8(input_image['image']))),
+                "mask": api.encode_pil_to_base64(Image.fromarray(np.uint8(input_image['mask']))),
+            }
+            
+        simple_req = dict(
+            input_image = input_image,
+            img_type = img_type
+        )
+        url = '/'.join([shared.cmd_opts.server_path, 'easyphoto/easyphoto_tryon_mask_forward'])
+        data = requests.post(url, json=simple_req)
+        
+        comments = json.loads(data.text)['message']
+        mask = api.decode_base64_to_image(json.loads(data.text)['mask'])
+        mask = np.uint8(mask)
+        return comments, mask
+    
     global check_hash, sam_predictor
 
     check_files_exists_and_download(check_hash.get("add_tryon", True), "add_tryon")

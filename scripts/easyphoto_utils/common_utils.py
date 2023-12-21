@@ -18,7 +18,7 @@ from modelscope.utils.logger import get_logger as ms_get_logger
 from tqdm import tqdm
 
 import scripts.easyphoto_infer
-from scripts.easyphoto_config import get_backend_paths
+from scripts.easyphoto_config import get_backend_paths, extensions_builtin_dir, extensions_dir
 
 # Ms logger set
 ms_logger = ms_get_logger()
@@ -87,8 +87,8 @@ def check_files_exists_and_download(check_hash, download_mode="base", webui_id="
         cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_backend_paths(webui_id)
     
     # download path
-    controlnet_extensions_path = os.path.join(data_dir, "extensions", "sd-webui-controlnet")
-    controlnet_extensions_builtin_path = os.path.join(data_dir, "extensions-builtin", "sd-webui-controlnet")
+    controlnet_extensions_path = os.path.join(extensions_dir, "sd-webui-controlnet")
+    controlnet_extensions_builtin_path = os.path.join(extensions_builtin_dir, "sd-webui-controlnet")
     models_annotator_path = os.path.join(data_dir, "models")
     if os.path.exists(controlnet_extensions_path):
         controlnet_annotator_cache_path = os.path.join(controlnet_extensions_path, "annotator/downloads/openpose")
@@ -719,8 +719,8 @@ def get_controlnet_version() -> str:
         easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
         cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_backend_paths("")
         
-    controlnet_extensions_path = os.path.join(data_dir, "extensions", "sd-webui-controlnet")
-    controlnet_extensions_builtin_path = os.path.join(data_dir, "extensions-builtin", "sd-webui-controlnet")
+    controlnet_extensions_path = os.path.join(extensions_dir, "sd-webui-controlnet")
+    controlnet_extensions_builtin_path = os.path.join(extensions_builtin_dir, "sd-webui-controlnet")
     
     version_file = "scripts/controlnet_version.py"
     version_file_path = os.path.join(controlnet_extensions_path, version_file)

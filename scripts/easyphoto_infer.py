@@ -6,6 +6,8 @@ import traceback
 import json
 from typing import Any, List, Union
 
+import base64
+import hashlib
 import requests
 import cv2
 import numpy as np
@@ -28,6 +30,7 @@ from scripts.easyphoto_config import (
     DEFAULT_POSITIVE_T2I,
     get_backend_paths, 
     validation_prompt,
+    data_dir,
 )
 from scripts.easyphoto_utils import (
     Face_Skin,
@@ -49,6 +52,7 @@ from scripts.easyphoto_utils import (
     switch_ms_model_cpu,
     unload_models,
     seed_everything,
+    decode_base64_to_video,
 )
 from scripts.sdwebui import (
     get_checkpoint_type,
@@ -512,9 +516,16 @@ def easyphoto_infer_forward(
         url = '/'.join([shared.cmd_opts.server_path, 'easyphoto/easyphoto_infer_forward'])
         data = requests.post(url, json=simple_req)
         
-        outputs = [api.decode_base64_to_image(output) for output in json.loads(data.text)['outputs']]
-        comments = json.loads(data.text)['message']
-        return comments, outputs
+        try:
+            comments = json.loads(data.text)['message']
+            outputs = [api.decode_base64_to_image(output) for output in json.loads(data.text)['outputs']]
+            face_id_outputs = [[api.decode_base64_to_image(output[0]), output[1]] for output in json.loads(data.text)['face_id_outputs']]
+        except Exception as e:
+            comments = json.loads(data.text)['message']
+            outputs = []
+            face_id_outputs = []
+
+        return comments, outputs, face_id_outputs
 
     data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
         easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
@@ -524,15 +535,15 @@ def easyphoto_infer_forward(
     global retinaface_detection, image_face_fusion, skin_retouching, portrait_enhancement, old_super_resolution_method, face_skin, face_recognition, psgan_inference, check_hash, sdxl_txt2img_flag
 
     # check & download weights of basemodel/controlnet+annotator/VAE/face_skin/buffalo/validation_template
-    check_files_exists_and_download(check_hash.get("base", True), download_mode="base")
-    check_files_exists_and_download(check_hash.get("portrait", True), download_mode="portrait")
+    check_files_exists_and_download(check_hash.get("base", True), download_mode="base", webui_id=webui_id)
+    check_files_exists_and_download(check_hash.get("portrait", True), download_mode="portrait", webui_id=webui_id)
     if check_hash.get("base", True) or check_hash.get("portrait", True):
         refresh_model_vae()
     check_hash["base"] = False
     check_hash["portrait"] = False
 
     # check the checkpoint_type of sd_model_checkpoint
-    checkpoint_type = get_checkpoint_type(sd_model_checkpoint)
+    checkpoint_type = get_checkpoint_type(sd_model_checkpoint, models_path)
     if checkpoint_type == 2:
         return "EasyPhoto does not support the SD2 checkpoint.", [], []
     sdxl_pipeline_flag = True if checkpoint_type == 3 else False
@@ -546,28 +557,28 @@ def easyphoto_infer_forward(
 
     # check & download weights of others models
     if sdxl_pipeline_flag or tabs == 3:
-        check_files_exists_and_download(check_hash.get("sdxl", True), download_mode="sdxl")
+        check_files_exists_and_download(check_hash.get("sdxl", True), download_mode="sdxl", webui_id=webui_id)
         if check_hash.get("sdxl", True):
             refresh_model_vae()
         check_hash["sdxl"] = False
     if tabs == 3:
-        check_files_exists_and_download(check_hash.get("add_text2image", True), download_mode="add_text2image")
+        check_files_exists_and_download(check_hash.get("add_text2image", True), download_mode="add_text2image", webui_id=webui_id)
         if check_hash.get("add_text2image", True):
             refresh_model_vae()
         check_hash["add_text2image"] = False
     if ipa_control:
         if not sdxl_pipeline_flag:
-            check_files_exists_and_download(check_hash.get("add_ipa_base", True), download_mode="add_ipa_base")
+            check_files_exists_and_download(check_hash.get("add_ipa_base", True), download_mode="add_ipa_base", webui_id=webui_id)
             if check_hash.get("add_ipa_base", True):
                 refresh_model_vae()
             check_hash["add_ipa_base"] = False
         else:
-            check_files_exists_and_download(check_hash.get("add_ipa_sdxl", True), download_mode="add_ipa_sdxl")
+            check_files_exists_and_download(check_hash.get("add_ipa_sdxl", True), download_mode="add_ipa_sdxl", webui_id=webui_id)
             if check_hash.get("add_ipa_sdxl", True):
                 refresh_model_vae()
             check_hash["add_ipa_sdxl"] = False
     if lcm_accelerate:
-        check_files_exists_and_download(check_hash.get("lcm", True), download_mode="lcm")
+        check_files_exists_and_download(check_hash.get("lcm", True), download_mode="lcm", webui_id=webui_id)
         check_hash["lcm"] = False
 
     # Check if the user_id is valid and if the type of the stable diffusion model and the user LoRA match
@@ -596,7 +607,7 @@ def easyphoto_infer_forward(
             ep_logger.error(error_info)
             return error_info, [], []
         # download all sliders here.
-        check_files_exists_and_download(check_hash.get("sliders", True), download_mode="sliders")
+        check_files_exists_and_download(check_hash.get("sliders", True), download_mode="sliders", webui_id=webui_id)
         check_hash["sliders"] = False
         loractl_flag = True
 
@@ -670,7 +681,7 @@ def easyphoto_infer_forward(
             template_images = [file_d["name"] for file_d in uploaded_template_images]
         elif tabs == 3:
             # load sd and vae
-            prompt_generate_sd_model_checkpoint_type = get_checkpoint_type(prompt_generate_sd_model_checkpoint)
+            prompt_generate_sd_model_checkpoint_type = get_checkpoint_type(prompt_generate_sd_model_checkpoint, models_path)
             if prompt_generate_sd_model_checkpoint_type == 3:
                 prompt_generate_vae = "madebyollin-sdxl-vae-fp16-fix.safetensors"
             else:
@@ -1808,7 +1819,13 @@ def easyphoto_video_infer_forward(
     *user_ids,
 ):
     if shared.cmd_opts.just_ui:
-        selected_template_images = eval(selected_template_images)
+        if openpose_video is not None:
+            with open(openpose_video, "rb") as f:
+                openpose_video = base64.b64encode(f.read()).decode("utf-8")
+
+        if init_video is not None:
+            with open(init_video, "rb") as f:
+                init_video = base64.b64encode(f.read()).decode("utf-8")
 
         simple_req = dict(
             webui_id = shared.cmd_opts.uid,
@@ -1825,7 +1842,7 @@ def easyphoto_video_infer_forward(
 
             init_image = None if init_image is None else api.encode_pil_to_base64(Image.fromarray(np.uint8(init_image))), 
             init_image_prompt = init_image_prompt,
-            last_image = None if init_image is None else api.encode_pil_to_base64(Image.fromarray(np.uint8(last_image))), 
+            last_image = None if last_image is None else api.encode_pil_to_base64(Image.fromarray(np.uint8(last_image))), 
 
             init_video = init_video,
             additional_prompt = additional_prompt,
@@ -1867,9 +1884,15 @@ def easyphoto_video_infer_forward(
         comments = json.loads(data.text)['message']
 
         if output_gif is not None:
-            output_gif = output_gif.replace("data-" + str(webui_id) + "/", "")
+            hash_value = hashlib.md5(base64.b64decode(output_gif)).hexdigest()
+            save_path = os.path.join("/tmp", hash_value + ".gif")
+            decode_base64_to_video(output_gif, save_path)
+            output_gif = save_path
         if output_video is not None:
-            output_video = output_video.replace("data-" + str(webui_id) + "/", "")
+            hash_value = hashlib.md5(base64.b64decode(output_video)).hexdigest()
+            save_path = os.path.join("/tmp", hash_value + ".mp4")
+            decode_base64_to_video(output_video, save_path)
+            output_video = save_path
 
         return comments, output_video, output_gif, outputs
 
@@ -1881,18 +1904,18 @@ def easyphoto_video_infer_forward(
         cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_backend_paths(webui_id)
 
     # check & download weights of basemodel/controlnet+annotator/VAE/face_skin/buffalo/validation_template
-    check_files_exists_and_download(check_hash.get("base", True), download_mode="base")
-    check_files_exists_and_download(check_hash.get("portrait", True), download_mode="portrait")
-    check_files_exists_and_download(check_hash.get("add_video", True), download_mode="add_video")
+    check_files_exists_and_download(check_hash.get("base", True), download_mode="base", webui_id=webui_id)
+    check_files_exists_and_download(check_hash.get("portrait", True), download_mode="portrait", webui_id=webui_id)
+    check_files_exists_and_download(check_hash.get("add_video", True), download_mode="add_video", webui_id=webui_id)
     if check_hash.get("base", True) or check_hash.get("portrait", True) or check_hash.get("add_video", True):
         refresh_model_vae()
     check_hash["base"] = False
     check_hash["portrait"] = False
     check_hash["add_video"] = False
 
-    checkpoint_type = get_checkpoint_type(sd_model_checkpoint)
-    checkpoint_type_text2video = get_checkpoint_type(sd_model_checkpoint_for_animatediff_text2video)
-    checkpoint_type_image2video = get_checkpoint_type(sd_model_checkpoint_for_animatediff_image2video)
+    checkpoint_type = get_checkpoint_type(sd_model_checkpoint, models_path)
+    checkpoint_type_text2video = get_checkpoint_type(sd_model_checkpoint_for_animatediff_text2video, models_path)
+    checkpoint_type_image2video = get_checkpoint_type(sd_model_checkpoint_for_animatediff_image2video, models_path)
     if (
         checkpoint_type == 2
         or checkpoint_type == 3
@@ -1904,12 +1927,12 @@ def easyphoto_video_infer_forward(
         return "EasyPhoto video infer does not support the SD2 checkpoint and sdxl.", None, None, []
 
     if ipa_control:
-        check_files_exists_and_download(check_hash.get("add_ipa_sdxl", True), download_mode="add_ipa_sdxl")
-        if check_hash.get("add_ipa_sdxl", True):
+        check_files_exists_and_download(check_hash.get("add_ipa_base", True), download_mode="add_ipa_base", webui_id=webui_id)
+        if check_hash.get("add_ipa_base", True):
             refresh_model_vae()
-        check_hash["add_ipa_sdxl"] = False
+        check_hash["add_ipa_base"] = False
     if lcm_accelerate:
-        check_files_exists_and_download(check_hash.get("lcm", True), download_mode="lcm")
+        check_files_exists_and_download(check_hash.get("lcm", True), download_mode="lcm", webui_id=webui_id)
         check_hash["lcm"] = False
 
     for user_id in user_ids:

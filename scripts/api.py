@@ -4,13 +4,15 @@ import os
 
 import gradio as gr
 import numpy as np
+import traceback
 import torch
+from PIL import Image
 from fastapi import FastAPI
 from modules.api import api
-
 from scripts.easyphoto_infer import easyphoto_infer_forward, easyphoto_video_infer_forward
+from scripts.easyphoto_tryon_infer import easyphoto_tryon_mask_forward, easyphoto_tryon_infer_forward
 from scripts.easyphoto_train import easyphoto_train_forward
-from scripts.easyphoto_utils import decode_base64_to_video, encode_video_to_base64
+from scripts.easyphoto_utils import decode_base64_to_video, ep_logger, encode_video_to_base64
 
 
 def easyphoto_train_forward_api(_: gr.Blocks, app: FastAPI):
@@ -18,6 +20,7 @@ def easyphoto_train_forward_api(_: gr.Blocks, app: FastAPI):
     def _easyphoto_train_forward_api(
         datas: dict,
     ):
+        webui_id = datas.get("webui_id", "")
         sd_model_checkpoint = datas.get("sd_model_checkpoint", "Chilloutmix-Ni-pruned-fp16-fix.safetensors")
         id_task = datas.get("id_task", "")
         user_id = datas.get("user_id", "tmp")
@@ -56,6 +59,7 @@ def easyphoto_train_forward_api(_: gr.Blocks, app: FastAPI):
 
         try:
             message = easyphoto_train_forward(
+                webui_id,
                 sd_model_checkpoint,
                 id_task,
                 user_id,
@@ -92,6 +96,7 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
     def _easyphoto_infer_forward_api(
         datas: dict,
     ):
+        webui_id = datas.get("webui_id", "")
         user_ids = datas.get("user_ids", [])
         sd_model_checkpoint = datas.get("sd_model_checkpoint", "Chilloutmix-Ni-pruned-fp16-fix.safetensors")
         selected_template_images = datas.get("selected_template_images", [])
@@ -191,6 +196,7 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
         tabs = int(tabs)
         try:
             comment, outputs, face_id_outputs = easyphoto_infer_forward(
+                webui_id,
                 sd_model_checkpoint,
                 selected_template_images,
                 init_image,
@@ -244,6 +250,8 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
             comment = f"Infer error, error info:{str(e)}"
             outputs = []
             face_id_outputs_base64 = []
+            traceback.print_exc()
+            ep_logger.error(comment)
 
         return {"message": comment, "outputs": outputs, "face_id_outputs": face_id_outputs_base64}
 
@@ -266,6 +274,7 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
         scene_id = datas.get("scene_id", "none")
         upload_control_video = datas.get("upload_control_video", False)
         upload_control_video_type = datas.get("upload_control_video_type", "openpose")
+
         openpose_video = datas.get("openpose_video", None)
         init_image = datas.get("init_image", None)
         init_image_prompt = datas.get("init_image_prompt", "")
@@ -274,7 +283,7 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
         init_video = datas.get("init_video", None)
         additional_prompt = datas.get("additional_prompt", "masterpiece, beauty")
 
-        max_frames = datas.get("max_frames", 32)
+        max_frames = datas.get("max_frames", 16)
         max_fps = datas.get("max_fps", 8)
         
         save_as = datas.get("save_as", "gif")
@@ -312,8 +321,6 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
         if type(user_ids) == str:
             user_ids = [user_ids]
 
-        selected_template_images = [api.decode_base64_to_image(_) for _ in selected_template_images]
-
         init_image = None if init_image is None else api.decode_base64_to_image(init_image)
         last_image = None if last_image is None else api.decode_base64_to_image(last_image)
         ipa_image = None if ipa_image is None else api.decode_base64_to_image(ipa_image)
@@ -323,7 +330,7 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
             hash_value = hashlib.md5(openpose_video).hexdigest()
             save_path = os.path.join("/tmp", hash_value + ".mp4")
             decode_base64_to_video(openpose_video, save_path)
-            
+
         if init_image is not None:
             init_image = np.uint8(init_image)
 
@@ -389,22 +396,161 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
                 ipa_weight,
                 ipa_image_path,
                 lcm_accelerate,
-                *user_ids
+                *user_ids,
             )
             outputs = [api.encode_pil_to_base64(output) for output in outputs]
+            if output_video is not None:
+                output_video = encode_video_to_base64(output_video)
+            if output_gif is not None:
+                output_gif = encode_video_to_base64(output_gif)
         except Exception as e:
             torch.cuda.empty_cache()
             comment = f"Infer error, error info:{str(e)}"
             output_video = None
             output_gif = None
             outputs = []
+            traceback.print_exc()
+            ep_logger.error(comment)
 
         return {"message": comment, "outputs": outputs, "output_video": output_video, "output_gif": output_gif}
+
+
+def easyphoto_tryon_infer_forward_api(_: gr.Blocks, app: FastAPI):
+    @app.post("/easyphoto/easyphoto_tryon_infer_forward")
+    def _easyphoto_tryon_infer_forward_api(
+        datas: dict,
+    ):
+        webui_id = datas.get("webui_id", "")
+        sd_model_checkpoint = datas.get("sd_model_checkpoint", "Chilloutmix-Ni-pruned-fp16-fix.safetensors")
+        template_image = datas.get("template_image", None)
+        template_mask = datas.get("template_mask", None)
+        selected_cloth_images = datas.get("selected_cloth_images", [])
+        reference_image = datas.get("reference_image", None)
+        reference_mask = datas.get("reference_mask", None)
+
+        additional_prompt = datas.get("additional_prompt", "masterpiece, beauty")
+        seed = datas.get("seed", -1)
+        first_diffusion_steps = datas.get("first_diffusion_steps", 50)
+        first_denoising_strength = datas.get("first_denoising_strength", 0.7)
+        lora_weight = datas.get("lora_weight", 0.8)
+        iou_threshold = datas.get("iou_threshold", 0.7)
+
+        angle = datas.get("angle", 0)
+        azimuth = datas.get("azimuth", 0)
+        ratio = datas.get("ratio", 1)
+        dx = datas.get("dx", 0)
+        dy = datas.get("dy", 0)
+
+        batch_size = datas.get("batch_size", 1)
+        optimize_angle_and_ratio = datas.get("optimize_angle_and_ratio", True)
+        refine_bound = datas.get("refine_bound", True)
+
+        ref_image_selected_tab = datas.get("ref_image_selected_tab", 0)
+        cloth_uuid = datas.get("cloth_uuid", "")
+
+        max_train_steps = datas.get("max_train_steps", 200)
+        
+        template_mask = None if template_mask is None else api.decode_base64_to_image(template_mask)
+        reference_mask = None if reference_mask is None else api.decode_base64_to_image(reference_mask)
+
+        if template_image is not None:
+            template_image = {
+                "image": np.uint8(api.decode_base64_to_image(template_image['image'])),
+                "mask": np.uint8(api.decode_base64_to_image(template_image['mask'])),
+            }
+        if template_mask is not None:
+            template_mask = np.uint8(template_mask)
+        if reference_image is not None:
+            reference_image = {
+                "image": np.uint8(api.decode_base64_to_image(reference_image['image'])),
+                "mask": np.uint8(api.decode_base64_to_image(reference_image['mask'])),
+            }
+        if reference_mask is not None:
+            reference_mask = np.uint8(reference_mask)
+            
+        try:
+            comment, return_res, template_mask, reference_mask = easyphoto_tryon_infer_forward(
+                webui_id,
+                sd_model_checkpoint,
+                template_image,
+                template_mask,
+                selected_cloth_images,
+                reference_image,
+                reference_mask,
+                additional_prompt,
+                seed,
+                first_diffusion_steps,
+                first_denoising_strength,
+                lora_weight,
+                iou_threshold,
+                angle,
+                azimuth,
+                ratio,
+                dx,
+                dy,
+                batch_size,
+                optimize_angle_and_ratio,
+                refine_bound,
+                ref_image_selected_tab,
+                cloth_uuid,
+                max_train_steps,
+            )
+            return_res = [api.encode_pil_to_base64(Image.fromarray(np.uint8(_))) for _ in return_res]
+            template_mask = None if template_mask is None else api.encode_pil_to_base64(Image.fromarray(np.uint8(template_mask)))
+            reference_mask = None if reference_mask is None else api.encode_pil_to_base64(Image.fromarray(np.uint8(reference_mask)))
+        except Exception as e:
+            torch.cuda.empty_cache()
+            comment = f"Infer error, error info:{str(e)}"
+            return_res = []
+            template_mask = None
+            reference_mask = None
+            traceback.print_exc()
+            ep_logger.error(comment)
+
+        return {"message": comment, "return_res": return_res, "template_mask": template_mask, "reference_mask": reference_mask}
+
+
+def easyphoto_tryon_mask_forward_api(_: gr.Blocks, app: FastAPI):
+    @app.post("/easyphoto/easyphoto_tryon_mask_forward")
+    def _easyphoto_tryon_mask_forward_api(
+        datas: dict,
+    ):
+        input_image = datas.get("input_image", None)
+        img_type = datas.get("img_type", "Template")
+
+        if input_image is not None:
+            input_image = {
+                "image": np.uint8(api.decode_base64_to_image(input_image['image'])),
+                "mask": np.uint8(api.decode_base64_to_image(input_image['mask'])),
+            }
+
+        try:
+            comment, mask = easyphoto_tryon_mask_forward(
+                input_image,
+                img_type,
+            )
+            mask = None if mask is None else api.encode_pil_to_base64(Image.fromarray(np.uint8(mask)))
+        except Exception as e:
+            torch.cuda.empty_cache()
+            comment = f"Infer error, error info:{str(e)}"
+            mask = None
+            traceback.print_exc()
+            ep_logger.error(comment)
+
+        return {"message": comment, "mask": mask}
 
 try:
     import modules.script_callbacks as script_callbacks
 
     script_callbacks.on_app_started(easyphoto_train_forward_api)
+    print("Train Api Init")
     script_callbacks.on_app_started(easyphoto_infer_forward_api)
+    print("Infer Api Init")
+    script_callbacks.on_app_started(easyphoto_video_infer_forward_api)
+    print("Video Infer Api Init")
+    script_callbacks.on_app_started(easyphoto_tryon_infer_forward_api)
+    print("TryOn Infer Api Init")
+    script_callbacks.on_app_started(easyphoto_tryon_mask_forward_api)
+    print("TryOn Mask Infer Api Init")
 except Exception as e:
     print(e)

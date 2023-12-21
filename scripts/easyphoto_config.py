@@ -1,8 +1,11 @@
 import os, glob
+from modules.paths import extensions_builtin_dir, extensions_dir
 from modules import script_callbacks, shared
 
 # save_dirs
 data_dir = data_path = shared.cmd_opts.data_dir
+extensions_builtin_dir = extensions_builtin_dir
+extensions_dir = extensions_dir
 
 def get_ui_paths():
     models_path                     = os.path.join(data_dir, "models")
@@ -40,14 +43,12 @@ def get_backend_paths(uuid):
         # gallery_dir
         tryon_preview_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)).replace("scripts", "images"), "tryon")
         tryon_gallery_dir = os.path.join(cloth_id_outpath_samples, "gallery")
-    else:
-        data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
-        easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
-        cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_ui_paths()
 
-    return data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
-        easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
-        cache_log_file_path, tryon_preview_dir, tryon_gallery_dir
+        return data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
+            easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
+            cache_log_file_path, tryon_preview_dir, tryon_gallery_dir
+    else:
+        return get_ui_paths()
 
 # prompts
 validation_prompt = "easyphoto_face, easyphoto, 1person"

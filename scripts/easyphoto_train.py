@@ -99,7 +99,9 @@ def easyphoto_train_forward(
     data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
         easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
         cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_backend_paths(webui_id)
-    
+    print(data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
+        easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
+        cache_log_file_path, tryon_preview_dir, tryon_gallery_dir)
     global check_hash
 
     if user_id == "" or user_id is None:
@@ -125,8 +127,8 @@ def easyphoto_train_forward(
     if int(rank) < int(network_alpha):
         return "The network alpha {} must not exceed rank {}. " "It will result in an unintended LoRA.".format(network_alpha, rank)
 
-    check_files_exists_and_download(check_hash.get("base", True), "base")
-    check_files_exists_and_download(check_hash.get("portrait", True), "portrait")
+    check_files_exists_and_download(check_hash.get("base", True), "base", webui_id=webui_id)
+    check_files_exists_and_download(check_hash.get("portrait", True), "portrait", webui_id=webui_id)
     check_hash["base"] = False
     check_hash["portrait"] = False
 
@@ -136,7 +138,7 @@ def easyphoto_train_forward(
     sdxl_pipeline_flag = True if checkpoint_type == 3 else False
 
     if sdxl_pipeline_flag:
-        check_files_exists_and_download(check_hash.get("sdxl", True), "sdxl")
+        check_files_exists_and_download(check_hash.get("sdxl", True), "sdxl", webui_id=webui_id)
         check_hash["sdxl"] = False
 
     # check if user want to train Scene Lora

@@ -5,9 +5,7 @@ import gradio as gr
 import glob
 import copy
 
-from scripts.easyphoto_infer import easyphoto_infer_forward
 from scripts.easyphoto_config import get_ui_paths
-from scripts.easyphoto_train import easyphoto_train_forward, DEFAULT_CACHE_LOG_FILE
 from modules import script_callbacks, shared
 import modules.generation_parameters_copypaste as parameters_copypaste
 from modules import script_callbacks, shared
@@ -50,9 +48,8 @@ try:
 except ImportError:
     pass
 
-data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
-easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
-cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_ui_paths()
+data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_ui_paths()
+
 
 def get_external_ckpts():
     external_checkpoints = []
@@ -229,10 +226,9 @@ class ToolButton(gr.Button, gr.components.FormComponent):
 
 
 def on_ui_tabs():
-    webui_id = gr.Text(label="Webui_ID", value="", visible=False)
-
     with gr.Blocks(analytics_enabled=False) as easyphoto_tabs:
         with gr.Tabs(elem_id="mode_easyphoto"):
+            webui_id = gr.Text(label="Webui_ID", value="", visible=False)
             with gr.TabItem("Train"):
                 dummy_component = gr.Label(visible=False)
                 with gr.Blocks():
