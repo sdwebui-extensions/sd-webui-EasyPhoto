@@ -1,18 +1,21 @@
 import base64
 import hashlib
 import os
+import traceback
 
 import gradio as gr
 import numpy as np
-import traceback
 import torch
-from PIL import Image
 from fastapi import FastAPI
 from modules.api import api
-from scripts.easyphoto_infer import easyphoto_infer_forward, easyphoto_video_infer_forward
-from scripts.easyphoto_tryon_infer import easyphoto_tryon_mask_forward, easyphoto_tryon_infer_forward
+from PIL import Image
+from scripts.easyphoto_infer import (easyphoto_infer_forward,
+                                     easyphoto_video_infer_forward)
 from scripts.easyphoto_train import easyphoto_train_forward
-from scripts.easyphoto_utils import decode_base64_to_video, ep_logger, encode_video_to_base64
+from scripts.easyphoto_tryon_infer import (easyphoto_tryon_infer_forward,
+                                           easyphoto_tryon_mask_forward)
+from scripts.easyphoto_utils import (decode_base64_to_video,
+                                     encode_video_to_base64, ep_logger)
 
 
 def easyphoto_train_forward_api(_: gr.Blocks, app: FastAPI):
@@ -87,6 +90,8 @@ def easyphoto_train_forward_api(_: gr.Blocks, app: FastAPI):
         except Exception as e:
             torch.cuda.empty_cache()
             message = f"Train error, error info:{str(e)}"
+            traceback.print_exc()
+            ep_logger.error(message)
 
         return {"message": message}
 
@@ -109,10 +114,15 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
         )
         text_to_image_width = datas.get("text_to_image_width", 624)
         text_to_image_height = datas.get("text_to_image_height", 832)
+
+        t2i_control_way = datas.get("t2i_control_way", "Control with inner template")
+        t2i_pose_template = datas.get("t2i_pose_template", None)
+
         scene_id = datas.get("scene_id", "none")
         prompt_generate_sd_model_checkpoint = datas.get("sd_model_checkpoint", "LZ-16K+Optics.safetensors")
 
         additional_prompt = datas.get("additional_prompt", "")
+        lora_weights = datas.get("lora_weights", 0.9)
 
         first_diffusion_steps = datas.get("first_diffusion_steps", 50)
         first_denoising_strength = datas.get("first_denoising_strength", 0.45)
@@ -155,6 +165,7 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
         selected_template_images = [api.decode_base64_to_image(_) for _ in selected_template_images]
         init_image = None if init_image is None else api.decode_base64_to_image(init_image)
         uploaded_template_images = [api.decode_base64_to_image(_) for _ in uploaded_template_images]
+        t2i_pose_template = None if t2i_pose_template is None else api.decode_base64_to_image(t2i_pose_template)
         ipa_image = None if ipa_image is None else api.decode_base64_to_image(ipa_image)
         ipa_only_image = None if ipa_only_image is None else api.decode_base64_to_image(ipa_only_image)
 
@@ -176,6 +187,9 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
             uploaded_template_image.save(save_path)
             _uploaded_template_images.append({"name": save_path})
         uploaded_template_images = _uploaded_template_images
+
+        if t2i_pose_template is not None:
+            t2i_pose_template = np.uint8(t2i_pose_template)
 
         if ipa_image is not None:
             hash_value = hashlib.md5(ipa_image.tobytes()).hexdigest()
@@ -204,9 +218,12 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
                 text_to_image_input_prompt,
                 text_to_image_width,
                 text_to_image_height,
+                t2i_control_way,
+                t2i_pose_template,
                 scene_id,
                 prompt_generate_sd_model_checkpoint,
                 additional_prompt,
+                lora_weights,
                 before_face_fusion_ratio,
                 after_face_fusion_ratio,
                 first_diffusion_steps,
@@ -262,12 +279,20 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
         datas: dict,
     ):
         user_ids = datas.get("user_ids", [])
+        
         webui_id = datas.get("webui_id", "")
         sd_model_checkpoint = datas.get("sd_model_checkpoint", "Chilloutmix-Ni-pruned-fp16-fix.safetensors")
-        sd_model_checkpoint_for_animatediff_text2video = datas.get("sd_model_checkpoint_for_animatediff_text2video", "majicmixRealistic_v7.safetensors")
-        sd_model_checkpoint_for_animatediff_image2video = datas.get("sd_model_checkpoint_for_animatediff_image2video", "majicmixRealistic_v7.safetensors")
-        
-        t2v_input_prompt = datas.get("t2v_input_prompt", "1girl, (white hair, long hair), blue eyes, hair ornament, blue dress, standing, looking at viewer, shy, upper-body")
+        sd_model_checkpoint_for_animatediff_text2video = datas.get(
+            "sd_model_checkpoint_for_animatediff_text2video", "majicmixRealistic_v7.safetensors"
+        )
+        sd_model_checkpoint_for_animatediff_image2video = datas.get(
+            "sd_model_checkpoint_for_animatediff_image2video", "majicmixRealistic_v7.safetensors"
+        )
+
+        t2v_input_prompt = datas.get(
+            "t2v_input_prompt",
+            "1girl, (white hair, long hair), blue eyes, hair ornament, blue dress, standing, looking at viewer, shy, upper-body",
+        )
         t2v_input_width = datas.get("t2v_input_width", 512)
         t2v_input_height = datas.get("t2v_input_height", 768)
 
@@ -280,14 +305,18 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
         init_image_prompt = datas.get("init_image_prompt", "")
         last_image = datas.get("last_image", None)
 
+        i2v_denoising_strength = datas.get("i2v_denoising_strength", 0.65)
+
         init_video = datas.get("init_video", None)
         additional_prompt = datas.get("additional_prompt", "masterpiece, beauty")
 
-        max_frames = datas.get("max_frames", 16)
+        lora_weights = datas.get("lora_weights", 0.9)
+
+        max_frames = datas.get("max_frames", 32)
         max_fps = datas.get("max_fps", 8)
-        
+
         save_as = datas.get("save_as", "gif")
-        
+
         first_diffusion_steps = datas.get("first_diffusion_steps", 50)
         first_denoising_strength = datas.get("first_denoising_strength", 0.45)
 
@@ -304,7 +333,7 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
         super_resolution_method = datas.get("super_resolution_method", "gpen")
         skin_retouching_bool = datas.get("skin_retouching_bool", False)
         display_score = datas.get("display_score", False)
-    
+
         makeup_transfer = datas.get("makeup_transfer", False)
         makeup_transfer_ratio = datas.get("makeup_transfer_ratio", 0.50)
         face_shape_match = datas.get("face_shape_match", False)
@@ -368,8 +397,10 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
                 init_image,
                 init_image_prompt,
                 last_image,
+                i2v_denoising_strength,
                 init_video,
                 additional_prompt,
+                lora_weights,
                 max_frames,
                 max_fps,
                 save_as,
