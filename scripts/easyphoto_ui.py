@@ -2080,7 +2080,7 @@ def on_ui_tabs():
                             )
 
                     def preview_mask(image_tryon, img_type):
-                        return_info, refine_mask = easyphoto_tryon_mask_forward(image_tryon, img_type)
+                        return_info, refine_mask = easyphoto_tryon_mask_forward(shared.cmd_opts.uid, image_tryon, img_type)
                         return return_info, refine_mask
 
                     template_mask_preview.click(

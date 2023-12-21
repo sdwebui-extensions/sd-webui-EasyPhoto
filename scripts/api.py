@@ -355,10 +355,10 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
         ipa_image = None if ipa_image is None else api.decode_base64_to_image(ipa_image)
 
         if openpose_video is not None:
-            openpose_video = base64.b64decode(openpose_video)
-            hash_value = hashlib.md5(openpose_video).hexdigest()
+            hash_value = hashlib.md5(base64.b64decode(openpose_video)).hexdigest()
             save_path = os.path.join("/tmp", hash_value + ".mp4")
             decode_base64_to_video(openpose_video, save_path)
+            openpose_video = save_path
 
         if init_image is not None:
             init_image = np.uint8(init_image)
@@ -367,10 +367,10 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
             last_image = np.uint8(last_image)
 
         if init_video is not None:
-            init_video = base64.b64decode(init_video)
-            hash_value = hashlib.md5(init_video).hexdigest()
+            hash_value = hashlib.md5(base64.b64decode(init_video)).hexdigest()
             save_path = os.path.join("/tmp", hash_value + ".mp4")
             decode_base64_to_video(init_video, save_path)
+            init_video = save_path
 
         if ipa_image is not None:
             hash_value = hashlib.md5(ipa_image.tobytes()).hexdigest()
@@ -546,6 +546,7 @@ def easyphoto_tryon_mask_forward_api(_: gr.Blocks, app: FastAPI):
     def _easyphoto_tryon_mask_forward_api(
         datas: dict,
     ):
+        webui_id = datas.get("webui_id", "")
         input_image = datas.get("input_image", None)
         img_type = datas.get("img_type", "Template")
 
@@ -557,6 +558,7 @@ def easyphoto_tryon_mask_forward_api(_: gr.Blocks, app: FastAPI):
 
         try:
             comment, mask = easyphoto_tryon_mask_forward(
+                webui_id,
                 input_image,
                 img_type,
             )

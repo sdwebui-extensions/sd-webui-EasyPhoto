@@ -249,7 +249,7 @@ def easyphoto_tryon_infer_forward(
         os.makedirs(os.path.dirname(os.path.abspath(webui_save_path)), exist_ok=True)
 
         if reference_mask is None:
-            _, reference_mask = easyphoto_tryon_mask_forward(reference_image, "Reference")
+            _, reference_mask = easyphoto_tryon_mask_forward(webui_id, reference_image, "Reference")
 
         prepare_tryon_train_data(reference_image, reference_mask, ref_image_path, images_save_path, json_save_path, validation_tryon_prompt)
 
@@ -404,7 +404,7 @@ def easyphoto_tryon_infer_forward(
     mask_template_input = np.uint8(Image.fromarray(np.uint8(template_image["mask"])))
     if template_mask is None:
         # refine
-        _, mask_template = easyphoto_tryon_mask_forward(template_image, "Template")
+        _, mask_template = easyphoto_tryon_mask_forward(webui_id, template_image, "Template")
         # update for return
         template_mask = mask_template
     else:
@@ -704,7 +704,7 @@ def easyphoto_tryon_infer_forward(
     return "Success\n" + return_msg, return_res, template_mask, reference_mask
 
 
-def easyphoto_tryon_mask_forward(input_image, img_type):
+def easyphoto_tryon_mask_forward(webui_id, input_image, img_type):
     if shared.cmd_opts.just_ui:
         if input_image is not None:
             input_image = {
@@ -713,6 +713,7 @@ def easyphoto_tryon_mask_forward(input_image, img_type):
             }
             
         simple_req = dict(
+            webui_id = shared.cmd_opts.uid,
             input_image = input_image,
             img_type = img_type
         )
@@ -724,9 +725,13 @@ def easyphoto_tryon_mask_forward(input_image, img_type):
         mask = np.uint8(mask)
         return comments, mask
     
+    data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
+        easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
+        cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_backend_paths(webui_id)
+    
     global check_hash, sam_predictor
 
-    check_files_exists_and_download(check_hash.get("add_tryon", True), "add_tryon")
+    check_files_exists_and_download(check_hash.get("add_tryon", True), "add_tryon", webui_id)
     check_hash["add_tryon"] = False
 
     if input_image is None:

@@ -445,7 +445,7 @@ def easyphoto_infer_forward(
             sd_model_checkpoint = sd_model_checkpoint,
             selected_template_images = [api.encode_pil_to_base64(Image.open(_)) for _ in selected_template_images],
             init_image = None if init_image is None else api.encode_pil_to_base64(Image.fromarray(np.uint8(init_image))), 
-            uploaded_template_images = [api.encode_pil_to_base64(Image.open(_)) for _ in uploaded_template_images],
+            uploaded_template_images = [api.encode_pil_to_base64(Image.open(_["name"])) for _ in uploaded_template_images],
             text_to_image_input_prompt = text_to_image_input_prompt,
             text_to_image_width = text_to_image_width,
             text_to_image_height = text_to_image_height,
