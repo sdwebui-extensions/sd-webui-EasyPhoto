@@ -282,6 +282,12 @@ if video_visible:
                 self.ad_params = AnimateDiffProcess(**params)
                 params = self.ad_params
             if params.enable:
+                if self.hacked:
+                    self.cn_hacker.restore()
+                    self.cfg_hacker.restore()
+                    self.lora_hacker.restore()
+                    motion_module.restore(p.sd_model)
+                    self.hacked = False
                 ep_logger.info("AnimateDiff process start.")
                 params.set_p(p)
                 motion_module.inject(p.sd_model, params.model)

@@ -716,10 +716,6 @@ def seed_everything(seed=11):
 
 def get_controlnet_version() -> str:
     """Borrowed from sd-webui-controlnet/patch_version.py."""
-    data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
-        easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
-        cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_backend_paths("")
-        
     controlnet_extensions_path = os.path.join(extensions_dir, "sd-webui-controlnet")
     controlnet_extensions_builtin_path = os.path.join(extensions_builtin_dir, "sd-webui-controlnet")
     
