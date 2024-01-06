@@ -140,6 +140,7 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
         color_shift_last = datas.get("color_shift_last", True)
         super_resolution = datas.get("super_resolution", True)
         super_resolution_method = datas.get("super_resolution_method", "gpen")
+        super_resolution_ratio = datas.get("super_resolution_ratio", 0.5)
         skin_retouching_bool = datas.get("skin_retouching_bool", False)
         display_score = datas.get("display_score", False)
         background_restore = datas.get("background_restore", False)
@@ -158,6 +159,7 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
         ipa_only_image = datas.get("ipa_only_image", None)
 
         lcm_accelerate = datas.get("lcm_accelerate", None)
+        enable_second_diffusion = datas.get("enable_second_diffusion", True)
 
         if type(user_ids) == str:
             user_ids = [user_ids]
@@ -238,6 +240,7 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
                 color_shift_last,
                 super_resolution,
                 super_resolution_method,
+                super_resolution_ratio,
                 skin_retouching_bool,
                 display_score,
                 background_restore,
@@ -253,6 +256,7 @@ def easyphoto_infer_forward_api(_: gr.Blocks, app: FastAPI):
                 ipa_only_weight,
                 ipa_only_image_path,
                 lcm_accelerate,
+                enable_second_diffusion,
                 *user_ids,
             )
             outputs = [api.encode_pil_to_base64(output) for output in outputs]
@@ -331,6 +335,7 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
     
         super_resolution = datas.get("super_resolution", True)
         super_resolution_method = datas.get("super_resolution_method", "gpen")
+        super_resolution_ratio = datas.get("super_resolution_ratio", 0.5)
         skin_retouching_bool = datas.get("skin_retouching_bool", False)
         display_score = datas.get("display_score", False)
 
@@ -415,6 +420,7 @@ def easyphoto_video_infer_forward_api(_: gr.Blocks, app: FastAPI):
                 color_shift_middle,
                 super_resolution,
                 super_resolution_method,
+                super_resolution_ratio,
                 skin_retouching_bool,
                 display_score,
                 makeup_transfer,

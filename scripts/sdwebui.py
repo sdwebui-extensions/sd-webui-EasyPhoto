@@ -1,14 +1,17 @@
 import copy
 import os
+import random
+import re
 from contextlib import ContextDecorator
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import gradio as gr
 import modules
+import traceback
 import modules.scripts as scripts
 import numpy as np
-from modules import cache, errors, processing, sd_models, sd_vae, shared
+from modules import cache, errors, processing, sd_hijack, sd_models, sd_vae, shared
 from modules.paths import models_path
 from modules.processing import Processed, StableDiffusionProcessing, StableDiffusionProcessingImg2Img, StableDiffusionProcessingTxt2Img
 from modules.sd_models import list_models
@@ -45,6 +48,7 @@ class unload_sd(ContextDecorator):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         sd_models.reload_model_weights()
+        sd_hijack.apply_optimizations()  # cross attention optimization.
 
 
 class switch_sd_model_vae(ContextDecorator):
@@ -339,6 +343,13 @@ def refresh_model_vae():
     """Refresh sd model and vae"""
     list_models()
     refresh_vae_list()
+    try:
+        from scripts import global_state
+
+        global_state.update_cn_models()
+    except Exception as e:
+        ep_logger.error(f"Controlnet Refresh Error. Error info:{e}")
+        traceback.print_exc()
 
 
 @switch_return_opt()
@@ -738,8 +749,34 @@ def get_checkpoint_type(sd_model_checkpoint: str, models_path: str) -> int:
     return 1
 
 
+def read_lora_metadata(filename: str) -> str:
+    """Read the metadata from the Lora given the path `filename`. Modified from `extensions-builtin/Lora/network.py`.
+
+    Args:
+        filename (str): the Lora file path.
+
+    Returns:
+        A string representing the metadata.
+    """
+    # Firstly, read the metadata of the Lora from the cache. If the Lora is added to the folder
+    # after the SD Web UI launches, then read the Lora from the hard disk to get the metadata.
+    try:
+        name = os.path.splitext(os.path.basename(filename))[0]
+        read_metadata = lambda filename: sd_models.read_metadata_from_safetensors(filename)
+        # It will return None if the Lora file has not be cached before.
+        metadata = cache.cached_data_for_file("safetensors-metadata", "lora/" + name, filename, read_metadata)
+
+        return metadata
+    except TypeError:
+        metadata = sd_models.read_metadata_from_safetensors(filename)
+
+        return metadata
+    except Exception as e:
+        errors.display(e, f"reading lora {filename}")
+
+
 def get_lora_type(filename: str) -> int:
-    """Get the type of the Lora given the path `filename`. Modified from `extensions-builtin/Lora/network.py`.
+    """Get the type of the Lora given the path `filename`.
 
     Args:
         filename (str): the Lora file path.
@@ -747,48 +784,29 @@ def get_lora_type(filename: str) -> int:
     Returns:
         An integer representing the Lora type (1 means SD1; 2 means SD2; 3 means SDXL).
     """
-    # Firstly, read the metadata of the Lora from the cache. If the Lora is added to the folder
-    # after the SD Web UI launches, then read the Lora from the hard disk to get the metadata.
-    try:
-        name = os.path.splitext(os.path.basename(filename))[0]
-        read_metadata = lambda filename: sd_models.read_metadata_from_safetensors(filename)
-        # It will return None if the Lora file has not be cached before.
-        metadata = cache.cached_data_for_file("safetensors-metadata", "lora/" + name, filename, read_metadata)
-    except TypeError:
-        metadata = sd_models.read_metadata_from_safetensors(filename)
-    except Exception as e:
-        errors.display(e, f"reading lora {filename}")
-
-    if str(metadata.get("ep_lora_version", "")).startswith("scene"):
-        return 4
-    elif str(metadata.get("ss_base_model_version", "")).startswith("sdxl_"):
+    metadata = read_lora_metadata(filename)
+    if str(metadata.get("ss_base_model_version", "")).startswith("sdxl_"):
         return 3
     elif str(metadata.get("ss_v2", "")) == "True":
         return 2
     return 1
 
 
-def get_scene_prompt(filename: str) -> int:
-    """Get the type of the Lora given the path `filename`. Modified from `extensions-builtin/Lora/network.py`.
+def get_scene_prompt(filename: str) -> str:
+    """Check the scene lora and get the scene prompt from the path `filename`.
 
     Args:
         filename (str): the Lora file path.
 
     Returns:
-        The prompt of this scene lora.
+        A string represents the scene prompt.
     """
-    # Firstly, read the metadata of the Lora from the cache. If the Lora is added to the folder
-    # after the SD Web UI launches, then read the Lora from the hard disk to get the metadata.
-    try:
-        name = os.path.splitext(os.path.basename(filename))[0]
-        read_metadata = lambda filename: sd_models.read_metadata_from_safetensors(filename)
-        # It will return None if the Lora file has not be cached before.
-        metadata = cache.cached_data_for_file("safetensors-metadata", "lora/" + name, filename, read_metadata)
-    except TypeError:
-        metadata = sd_models.read_metadata_from_safetensors(filename)
-    except Exception as e:
-        errors.display(e, f"reading lora {filename}")
-
+    metadata = read_lora_metadata(filename)
     if str(metadata.get("ep_lora_version", "")).startswith("scene"):
-        return True, str(metadata.get("ep_prompt", ""))
-    return False, ""
+        prompt = str(metadata.get("ep_prompt", ""))
+        # Convert a list of strings (type: str) into an list of strings (type: List).
+        if prompt[0] == "[" and prompt[-1] == "]":
+            prompt_list = re.findall(r"'(.*?)'", prompt)
+            prompt = random.choice(prompt_list)
+        return prompt
+    return ""

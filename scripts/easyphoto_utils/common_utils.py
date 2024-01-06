@@ -17,6 +17,7 @@ import torchvision
 from modelscope.utils.logger import get_logger as ms_get_logger
 from tqdm import tqdm
 
+from modules import shared
 import scripts.easyphoto_infer
 from scripts.easyphoto_config import get_backend_paths, extensions_builtin_dir, extensions_dir
 
@@ -25,7 +26,7 @@ ms_logger = ms_get_logger()
 ms_logger.setLevel(logging.ERROR)
 
 # ep logger set
-ep_logger_name = __name__.split(".")[0]
+ep_logger_name = "EasyPhoto"
 ep_logger = logging.getLogger(ep_logger_name)
 ep_logger.propagate = False
 
@@ -44,16 +45,19 @@ for handler in handlers:
 ep_logger.setLevel("INFO")
 
 
-def check_scene_valid(lora_path, models_path):
-    from scripts.sdwebui import get_lora_type
 
+
+def check_scene_valid(lora_path, models_path) -> bool:
+    from scripts.sdwebui import read_lora_metadata
+    
     safetensors_lora_path = os.path.join(models_path, "Lora", lora_path)
     if not safetensors_lora_path.endswith("safetensors"):
         return False
-    lora_type = get_lora_type(safetensors_lora_path)
-    if lora_type == 4:
+    metadata = read_lora_metadata(safetensors_lora_path)
+    if str(metadata.get("ep_lora_version", "")).startswith("scene"):
         return True
-    return False
+    else:
+        return False
 
 
 def check_id_valid(user_id, user_id_outpath_samples, models_path):
@@ -144,6 +148,7 @@ def check_files_exists_and_download(check_hash, download_mode="base", webui_id="
         "sdxl": [
             # sdxl
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/diffusers_xl_canny_mid.safetensors",
+            "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/thibaud_xl_openpose_256lora.safetensors",
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/madebyollin_sdxl_vae_fp16_fix/diffusion_pytorch_model.safetensors",
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/madebyollin-sdxl-vae-fp16-fix.safetensors",
         ],
@@ -174,6 +179,8 @@ def check_files_exists_and_download(check_hash, download_mode="base", webui_id="
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/majicmixRealistic_v7.safetensors",
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/mm_sd_v15_v2.ckpt",
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/flownet.pkl",
+            "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/dw-ll_ucoco_384.onnx",
+            "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/yolox_l.onnx",
         ],
         "add_tryon": [
             # controlnets
@@ -327,6 +334,10 @@ def check_files_exists_and_download(check_hash, download_mode="base", webui_id="
                 os.path.join(models_path, f"ControlNet/diffusers_xl_canny_mid.safetensors"),
                 os.path.join(controlnet_cache_path, f"models/diffusers_xl_canny_mid.safetensors"),
             ],
+            [
+                os.path.join(models_path, f"ControlNet/thibaud_xl_openpose_256lora.safetensors"),
+                os.path.join(controlnet_cache_path, f"models/thibaud_xl_openpose_256lora.safetensors"),
+            ],
             os.path.join(easyphoto_models_path, "stable-diffusion-xl/madebyollin_sdxl_vae_fp16_fix/diffusion_pytorch_model.safetensors"),
             os.path.join(models_path, f"VAE/madebyollin-sdxl-vae-fp16-fix.safetensors"),
         ],
@@ -363,6 +374,8 @@ def check_files_exists_and_download(check_hash, download_mode="base", webui_id="
             os.path.join(models_path, f"Stable-diffusion/majicmixRealistic_v7.safetensors"),
             os.path.join(easyphoto_models_path, "mm_sd_v15_v2.ckpt"),
             os.path.join(easyphoto_models_path, "flownet.pkl"),
+            os.path.join(controlnet_annotator_cache_path, "dw-ll_ucoco_384.onnx"),
+            os.path.join(controlnet_annotator_cache_path, "yolox_l.onnx"),
         ],
         "add_tryon": [
             os.path.join(controlnet_depth_annotator_cache_path, f"dpt_hybrid-midas-501f0c75.pt"),
@@ -702,6 +715,23 @@ def unload_models():
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
     return "Already Empty Cache of Preprocess Model in EasyPhoto"
+
+
+class cleanup_decorator(ContextDecorator):
+    """Context-manager that supports cleanup cache."""
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if not shared.opts.data.get("easyphoto_cache_model", True):
+            unload_models()
+        else:
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+        print("Cleanup completed.")
 
 
 def seed_everything(seed=11):

@@ -670,12 +670,15 @@ class Face_Skin(object):
 
             # detect image
             retinaface_boxes, _, _ = call_face_crop(retinaface_detection, image, 1.5, prefix="tmp")
-            if len(retinaface_box) > 0:
+            if len(retinaface_boxes) > 0:
                 retinaface_box = retinaface_boxes[0]
                 # sub_face for seg skin
                 sub_image = image.crop(retinaface_box)
             else:
                 sub_image = image
+
+            # sub_face for seg skin
+            sub_image = image.crop(retinaface_box)
 
             image_h, image_w, c = np.shape(np.uint8(sub_image))
             PIL_img = Image.fromarray(np.uint8(sub_image))

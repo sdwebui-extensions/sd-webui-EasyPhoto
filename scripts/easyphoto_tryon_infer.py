@@ -45,6 +45,7 @@ from scripts.easyphoto_utils import (
     resize_image_with_pad,
     seg_by_box,
     find_connected_components,
+    cleanup_decorator,
 )
 from scripts.sdwebui import get_checkpoint_type, reload_sd_model_vae, switch_sd_model_vae
 
@@ -55,6 +56,7 @@ sam_predictor = None
 
 
 @switch_sd_model_vae()
+@cleanup_decorator()
 def easyphoto_tryon_infer_forward(
     webui_id,
     sd_model_checkpoint,
@@ -290,7 +292,7 @@ def easyphoto_tryon_infer_forward(
         dataloader_num_workers = 16
 
         ep_logger.info(f"Delete sam model before training to save CUDA memory.")
-        del sam_predictor
+        sam_predictor = None
         torch.cuda.empty_cache()
 
         if platform.system() == "Windows":
