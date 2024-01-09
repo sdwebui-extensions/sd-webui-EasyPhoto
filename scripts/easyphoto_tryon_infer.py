@@ -23,6 +23,7 @@ from scripts.easyphoto_config import (
     get_backend_paths,
     validation_tryon_prompt,
     DEFAULT_CLOTH_LORA,
+    eas_public_cache_path,
 )
 from scripts.easyphoto_infer import inpaint
 from scripts.easyphoto_utils import (
@@ -756,7 +757,7 @@ def easyphoto_tryon_mask_forward(webui_id, input_image, img_type):
     # model init
     if sam_predictor is None:
         sam_checkpoint = os.path.join(
-            os.path.abspath(os.path.dirname(__file__)).replace("scripts", "models"),
+            eas_public_cache_path,
             "sam_vit_l_0b3195.pth",
         )
 

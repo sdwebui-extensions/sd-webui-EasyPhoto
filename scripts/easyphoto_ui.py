@@ -3,7 +3,9 @@ import os
 
 import gradio as gr
 import glob
+import json
 import copy
+import requests
 
 from scripts.easyphoto_config import get_ui_paths
 from modules import script_callbacks, shared
@@ -1064,7 +1066,19 @@ def on_ui_tabs():
                             )
 
                             infer_progress = gr.Textbox(label="Generation Progress", value="No task currently", interactive=False)
-                            empty_cache.click(fn=unload_models, inputs=[], outputs=infer_progress)
+
+                            def empty_cache_ui():
+                                if shared.cmd_opts.just_ui:
+                                    simple_req = {}
+                                    url = '/'.join([shared.cmd_opts.server_path, 'easyphoto/easyphoto_empty_cache'])
+                                    data = requests.post(url, json=simple_req)
+                                    message = json.loads(data.text)['message']
+                                    return message
+                                else:
+                                    message = unload_models()
+                                    return message
+
+                            empty_cache.click(fn=empty_cache_ui, inputs=[], outputs=infer_progress)
 
                     display_button.click(
                         fn=easyphoto_infer_forward,
@@ -1657,7 +1671,7 @@ def on_ui_tabs():
 
                                 infer_progress = gr.Textbox(label="Generation Progress", value="No task currently", interactive=False)
 
-                                empty_cache.click(fn=unload_models, inputs=[], outputs=infer_progress)
+                                empty_cache.click(fn=empty_cache_ui, inputs=[], outputs=infer_progress)
 
                         display_button.click(
                             fn=easyphoto_video_infer_forward,

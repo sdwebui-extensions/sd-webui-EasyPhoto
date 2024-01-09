@@ -13,10 +13,10 @@ from modules import shared
 from modules.api import api
 from modules.sd_models_config import config_default, config_sdxl
 from PIL import Image, ImageOps
-from scripts.easyphoto_config import (get_backend_paths, validation_prompt,
+from scripts.easyphoto_config import (get_backend_paths, validation_prompt, eas_public_cache_path,
                                       validation_prompt_scene)
 from scripts.easyphoto_utils import (check_files_exists_and_download,
-                                     check_id_valid, check_scene_valid,
+                                     check_id_valid, check_scene_valid, ep_logger,
                                      unload_models)
 from scripts.sdwebui import get_checkpoint_type, unload_sd
 from scripts.train_kohya.utils.lora_utils import convert_lora_to_safetensors
@@ -91,9 +91,7 @@ def easyphoto_train_forward(
     data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
         easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
         cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_backend_paths(webui_id)
-    print(data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, \
-        easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, \
-        cache_log_file_path, tryon_preview_dir, tryon_gallery_dir)
+        
     global check_hash
 
     if user_id == "" or user_id is None:
@@ -132,7 +130,7 @@ def easyphoto_train_forward(
     check_hash["base"] = False
     check_hash["portrait"] = False
 
-    checkpoint_type = get_checkpoint_type(sd_model_checkpoint)
+    checkpoint_type = get_checkpoint_type(sd_model_checkpoint, models_path)
     if checkpoint_type == 2:
         ep_logger.error("EasyPhoto does not support the SD2 checkpoint: {}.".format(sd_model_checkpoint))
         return "EasyPhoto does not support the SD2 checkpoint: {}.".format(sd_model_checkpoint)
@@ -162,7 +160,7 @@ def easyphoto_train_forward(
             return "To save training time and VRAM, please turn off validation in SDXL training."
 
     # Template address
-    training_templates_path = os.path.join(easyphoto_models_path, "training_templates")
+    training_templates_path = os.path.join(eas_public_cache_path, "training_templates")
     # Raw data backup
     original_backup_path = os.path.join(cache_outpath_samples, user_id, "original_backup")
     # Reference backup of face
@@ -180,7 +178,7 @@ def easyphoto_train_forward(
     weights_save_path = os.path.join(cache_outpath_samples, user_id, "user_weights")
     webui_save_path = os.path.join(models_path, f"Lora/{user_id}.safetensors")
     webui_load_path = os.path.join(models_path, f"Stable-diffusion", sd_model_checkpoint)
-    sd_save_path = os.path.join(easyphoto_models_path, "stable-diffusion-v1-5")
+    sd_save_path = os.path.join(eas_public_cache_path, "stable-diffusion-v1-5")
     if sdxl_pipeline_flag:
         sd_save_path = sd_save_path.replace("stable-diffusion-v1-5", "stable-diffusion-xl/stabilityai_stable_diffusion_xl_base_1.0")
     if enable_rl and not train_scene_lora_bool:

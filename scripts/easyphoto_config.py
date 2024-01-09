@@ -6,6 +6,7 @@ from modules import script_callbacks, shared
 data_dir = data_path = shared.cmd_opts.data_dir
 extensions_builtin_dir = extensions_builtin_dir
 extensions_dir = extensions_dir
+eas_public_cache_path = "/stable-diffusion-cache/models/EasyPhoto"
 
 def get_ui_paths():
     models_path                     = os.path.join(data_dir, "models")

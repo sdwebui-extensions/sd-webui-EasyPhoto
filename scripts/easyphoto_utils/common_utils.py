@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from modules import shared
 import scripts.easyphoto_infer
-from scripts.easyphoto_config import get_backend_paths, extensions_builtin_dir, extensions_dir
+from scripts.easyphoto_config import get_backend_paths, extensions_builtin_dir, extensions_dir, eas_public_cache_path
 
 # Ms logger set
 ms_logger = ms_get_logger()
@@ -131,10 +131,10 @@ def check_files_exists_and_download(check_hash, download_mode="base", webui_id="
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/control_v11f1e_sd15_tile.pth",
             # loras
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/FilmVelvia3.safetensors",
-            # controlnet annotator
-            "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/body_pose_model.pth",
-            "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/facenet.pth",
-            "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/hand_pose_model.pth",
+            # # controlnet annotator, useless in eas
+            # "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/body_pose_model.pth",
+            # "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/facenet.pth",
+            # "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/hand_pose_model.pth",
             # other models
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/face_skin.pth",
             "https://pai-aigc-photog.oss-cn-hangzhou.aliyuncs.com/webui/face_landmarks.pth",
@@ -315,19 +315,19 @@ def check_files_exists_and_download(check_hash, download_mode="base", webui_id="
             ],
             # loras
             os.path.join(models_path, f"Lora/FilmVelvia3.safetensors"),
-            # controlnet annotator
-            os.path.join(controlnet_annotator_cache_path, f"body_pose_model.pth"),
-            os.path.join(controlnet_annotator_cache_path, f"facenet.pth"),
-            os.path.join(controlnet_annotator_cache_path, f"hand_pose_model.pth"),
+            # # controlnet annotator
+            # os.path.join(controlnet_annotator_cache_path, f"body_pose_model.pth"),
+            # os.path.join(controlnet_annotator_cache_path, f"facenet.pth"),
+            # os.path.join(controlnet_annotator_cache_path, f"hand_pose_model.pth"),
             # other models
-            os.path.join(easyphoto_models_path, "face_skin.pth"),
-            os.path.join(easyphoto_models_path, "face_landmarks.pth"),
-            os.path.join(easyphoto_models_path, "makeup_transfer.pth"),
+            os.path.join(eas_public_cache_path, "face_skin.pth"),
+            os.path.join(eas_public_cache_path, "face_landmarks.pth"),
+            os.path.join(eas_public_cache_path, "makeup_transfer.pth"),
             # templates
-            os.path.join(easyphoto_models_path, "training_templates", "1.jpg"),
-            os.path.join(easyphoto_models_path, "training_templates", "2.jpg"),
-            os.path.join(easyphoto_models_path, "training_templates", "3.jpg"),
-            os.path.join(easyphoto_models_path, "training_templates", "4.jpg"),
+            os.path.join(eas_public_cache_path, "training_templates", "1.jpg"),
+            os.path.join(eas_public_cache_path, "training_templates", "2.jpg"),
+            os.path.join(eas_public_cache_path, "training_templates", "3.jpg"),
+            os.path.join(eas_public_cache_path, "training_templates", "4.jpg"),
         ],
         "sdxl": [
             [
@@ -338,22 +338,22 @@ def check_files_exists_and_download(check_hash, download_mode="base", webui_id="
                 os.path.join(models_path, f"ControlNet/thibaud_xl_openpose_256lora.safetensors"),
                 os.path.join(controlnet_cache_path, f"models/thibaud_xl_openpose_256lora.safetensors"),
             ],
-            os.path.join(easyphoto_models_path, "stable-diffusion-xl/madebyollin_sdxl_vae_fp16_fix/diffusion_pytorch_model.safetensors"),
+            os.path.join(eas_public_cache_path, "stable-diffusion-xl/madebyollin_sdxl_vae_fp16_fix/diffusion_pytorch_model.safetensors"),
             os.path.join(models_path, f"VAE/madebyollin-sdxl-vae-fp16-fix.safetensors"),
         ],
         "add_text2image": [
             # sdxl for text2image
             os.path.join(models_path, f"Stable-diffusion/LZ-16K+Optics.safetensors"),
-            os.path.join(easyphoto_models_path, "pose_templates", "001.png"),
-            os.path.join(easyphoto_models_path, "pose_templates", "002.png"),
-            os.path.join(easyphoto_models_path, "pose_templates", "003.png"),
-            os.path.join(easyphoto_models_path, "pose_templates", "004.png"),
-            os.path.join(easyphoto_models_path, "pose_templates", "005.png"),
-            os.path.join(easyphoto_models_path, "pose_templates", "006.png"),
-            os.path.join(easyphoto_models_path, "pose_templates", "007.png"),
-            os.path.join(easyphoto_models_path, "pose_templates", "008.png"),
-            os.path.join(easyphoto_models_path, "pose_templates", "009.png"),
-            os.path.join(easyphoto_models_path, "pose_templates", "010.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "001.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "002.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "003.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "004.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "005.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "006.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "007.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "008.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "009.png"),
+            os.path.join(eas_public_cache_path, "pose_templates", "010.png"),
         ],
         "add_ipa_base": [
             [
@@ -372,15 +372,15 @@ def check_files_exists_and_download(check_hash, download_mode="base", webui_id="
         "add_video": [
             # new backbone for video
             os.path.join(models_path, f"Stable-diffusion/majicmixRealistic_v7.safetensors"),
-            os.path.join(easyphoto_models_path, "mm_sd_v15_v2.ckpt"),
-            os.path.join(easyphoto_models_path, "flownet.pkl"),
+            os.path.join(eas_public_cache_path, "mm_sd_v15_v2.ckpt"),
+            os.path.join(eas_public_cache_path, "flownet.pkl"),
             os.path.join(controlnet_annotator_cache_path, "dw-ll_ucoco_384.onnx"),
             os.path.join(controlnet_annotator_cache_path, "yolox_l.onnx"),
         ],
         "add_tryon": [
             os.path.join(controlnet_depth_annotator_cache_path, f"dpt_hybrid-midas-501f0c75.pt"),
             os.path.join(models_path, f"ControlNet/control_v11f1p_sd15_depth.pth"),
-            os.path.join(easyphoto_models_path, "sam_vit_l_0b3195.pth"),
+            os.path.join(eas_public_cache_path, "sam_vit_l_0b3195.pth"),
         ],
         # Scene Lora Collection
         "Christmas_1": [

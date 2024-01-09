@@ -15,7 +15,7 @@ from scripts.easyphoto_train import easyphoto_train_forward
 from scripts.easyphoto_tryon_infer import (easyphoto_tryon_infer_forward,
                                            easyphoto_tryon_mask_forward)
 from scripts.easyphoto_utils import (decode_base64_to_video,
-                                     encode_video_to_base64, ep_logger)
+                                     encode_video_to_base64, ep_logger, unload_models)
 
 
 def easyphoto_train_forward_api(_: gr.Blocks, app: FastAPI):
@@ -577,6 +577,14 @@ def easyphoto_tryon_mask_forward_api(_: gr.Blocks, app: FastAPI):
             ep_logger.error(comment)
 
         return {"message": comment, "mask": mask}
+
+def easyphoto_empty_cache_api(_: gr.Blocks, app: FastAPI):
+    @app.post("/easyphoto/easyphoto_empty_cache")
+    def _easyphoto_tryon_mask_forward_api(
+        datas: dict,
+    ):
+        message = unload_models()
+        return {"message": message}
 
 try:
     import modules.script_callbacks as script_callbacks

@@ -33,7 +33,7 @@ from modules.script_callbacks import (AfterCFGCallbackParams,
                                       cfg_denoiser_callback)
 from modules.shared import opts, state
 from PIL import Image, ImageFilter, ImageOps, PngImagePlugin
-from scripts.easyphoto_config import easyphoto_models_path
+from scripts.easyphoto_config import eas_public_cache_path
 from tqdm import tqdm
 
 try:
@@ -1094,7 +1094,7 @@ if video_visible:
                 self.mm.half()
 
     motion_module = AnimateDiffMM()
-    motion_module.set_script_dir(easyphoto_models_path)
+    motion_module.set_script_dir(eas_public_cache_path)
 
     class AnimateDiffUiGroup:
         txt2img_submit_button = None

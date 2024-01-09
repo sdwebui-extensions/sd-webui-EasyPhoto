@@ -23,7 +23,7 @@ from PIL import Image, ImageChops, ImageOps
 from scripts.easyphoto_config import (DEFAULT_NEGATIVE, DEFAULT_NEGATIVE_AD,
                                       DEFAULT_NEGATIVE_T2I, DEFAULT_POSITIVE,
                                       DEFAULT_POSITIVE_AD,
-                                      DEFAULT_POSITIVE_T2I, data_dir,
+                                      DEFAULT_POSITIVE_T2I, data_dir, eas_public_cache_path,
                                       get_backend_paths, validation_prompt)
 from scripts.easyphoto_utils import (Face_Skin, FIRE_forward, PSGAN_Inference,
                                      alignment_photo, call_face_crop,
@@ -36,7 +36,7 @@ from scripts.easyphoto_utils import (Face_Skin, FIRE_forward, PSGAN_Inference,
                                      get_mov_all_images,
                                      modelscope_models_to_cpu,
                                      modelscope_models_to_gpu, seed_everything,
-                                     switch_ms_model_cpu, unload_models)
+                                     switch_ms_model_cpu, unload_models, cleanup_decorator)
 from scripts.sdwebui import (get_checkpoint_type, get_lora_type,
                              get_scene_prompt, i2i_inpaint_call,
                              refresh_model_vae, reload_sd_model_vae,
@@ -707,14 +707,14 @@ def easyphoto_infer_forward(
 
     # create modelscope model
     if retinaface_detection is None:
-        retinaface_detection = pipeline(Tasks.face_detection, "damo/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
+        retinaface_detection = pipeline(Tasks.face_detection, f"{eas_public_cache_path}/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
     if image_face_fusion is None:
-        image_face_fusion = pipeline(Tasks.image_face_fusion, model="damo/cv_unet-image-face-fusion_damo", model_revision="v1.3")
+        image_face_fusion = pipeline(Tasks.image_face_fusion, model=f"{eas_public_cache_path}/cv_unet-image-face-fusion_damo", model_revision="v1.3")
     if face_skin is None:
-        face_skin = Face_Skin(os.path.join(easyphoto_models_path, "face_skin.pth"))
+        face_skin = Face_Skin(os.path.join(eas_public_cache_path, "face_skin.pth"))
     if skin_retouching is None:
         try:
-            skin_retouching = pipeline("skin-retouching-torch", model="damo/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
+            skin_retouching = pipeline("skin-retouching-torch", model=f"{eas_public_cache_path}/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
         except Exception as e:
             torch.cuda.empty_cache()
             traceback.print_exc()
@@ -723,11 +723,11 @@ def easyphoto_infer_forward(
         try:
             if super_resolution_method == "gpen":
                 portrait_enhancement = pipeline(
-                    Tasks.image_portrait_enhancement, model="damo/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
+                    Tasks.image_portrait_enhancement, model=f"{eas_public_cache_path}/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
                 )
             elif super_resolution_method == "realesrgan":
                 portrait_enhancement = pipeline(
-                    "image-super-resolution-x2", model="bubbliiiing/cv_rrdb_image-super-resolution_x2", model_revision="v1.0.2"
+                    "image-super-resolution-x2", model=f"{eas_public_cache_path}/cv_rrdb_image-super-resolution_x2", model_revision="v1.0.2"
                 )
             old_super_resolution_method = super_resolution_method
         except Exception as e:
@@ -737,13 +737,13 @@ def easyphoto_infer_forward(
 
     # To save the GPU memory, create the face recognition model for computing FaceID if the user intend to show it.
     if display_score and face_recognition is None:
-        face_recognition = pipeline("face_recognition", model="bubbliiiing/cv_retinafce_recognition", model_revision="v1.0.3")
+        face_recognition = pipeline("face_recognition", model=f"{eas_public_cache_path}/cv_retinafce_recognition", model_revision="v1.0.3")
 
     # psgan for transfer makeup
     if makeup_transfer and psgan_inference is None:
         try:
-            makeup_transfer_model_path = os.path.join(easyphoto_models_path, "makeup_transfer.pth")
-            face_landmarks_model_path = os.path.join(easyphoto_models_path, "face_landmarks.pth")
+            makeup_transfer_model_path = os.path.join(eas_public_cache_path, "makeup_transfer.pth")
+            face_landmarks_model_path = os.path.join(eas_public_cache_path, "face_landmarks.pth")
             psgan_inference = PSGAN_Inference(
                 "cuda", makeup_transfer_model_path, retinaface_detection, face_skin, face_landmarks_model_path
             )
@@ -793,8 +793,8 @@ def easyphoto_infer_forward(
         reload_sd_model_vae(prompt_generate_sd_model_checkpoint, prompt_generate_vae)
 
         if t2i_control_way == "Control with inner template":
-            t2i_pose_templates = glob.glob(os.path.join(easyphoto_models_path, "pose_templates/*.jpg")) + glob.glob(
-                os.path.join(easyphoto_models_path, "pose_templates/*.png")
+            t2i_pose_templates = glob.glob(os.path.join(eas_public_cache_path, "pose_templates/*.jpg")) + glob.glob(
+                os.path.join(eas_public_cache_path, "pose_templates/*.png")
             )
             t2i_pose_template = Image.open(np.random.choice(t2i_pose_templates))
             controlnet_pairs = [["openpose", t2i_pose_template, 0.50, 1]]
@@ -2108,14 +2108,14 @@ def easyphoto_video_infer_forward(
 
     # create modelscope model
     if retinaface_detection is None:
-        retinaface_detection = pipeline(Tasks.face_detection, "damo/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
+        retinaface_detection = pipeline(Tasks.face_detection, f"{eas_public_cache_path}/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
     if image_face_fusion is None:
-        image_face_fusion = pipeline(Tasks.image_face_fusion, model="damo/cv_unet-image-face-fusion_damo", model_revision="v1.3")
+        image_face_fusion = pipeline(Tasks.image_face_fusion, model=f"{eas_public_cache_path}/cv_unet-image-face-fusion_damo", model_revision="v1.3")
     if face_skin is None:
-        face_skin = Face_Skin(os.path.join(easyphoto_models_path, "face_skin.pth"))
+        face_skin = Face_Skin(os.path.join(eas_public_cache_path, "face_skin.pth"))
     if skin_retouching is None:
         try:
-            skin_retouching = pipeline("skin-retouching-torch", model="damo/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
+            skin_retouching = pipeline("skin-retouching-torch", model=f"{eas_public_cache_path}/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
         except Exception as e:
             torch.cuda.empty_cache()
             traceback.print_exc()
@@ -2124,11 +2124,11 @@ def easyphoto_video_infer_forward(
         try:
             if super_resolution_method == "gpen":
                 portrait_enhancement = pipeline(
-                    Tasks.image_portrait_enhancement, model="damo/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
+                    Tasks.image_portrait_enhancement, model=f"{eas_public_cache_path}/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
                 )
             elif super_resolution_method == "realesrgan":
                 portrait_enhancement = pipeline(
-                    "image-super-resolution-x2", model="bubbliiiing/cv_rrdb_image-super-resolution_x2", model_revision="v1.0.2"
+                    "image-super-resolution-x2", model=f"{eas_public_cache_path}/cv_rrdb_image-super-resolution_x2", model_revision="v1.0.2"
                 )
             old_super_resolution_method = super_resolution_method
         except Exception as e:
@@ -2139,8 +2139,8 @@ def easyphoto_video_infer_forward(
     # psgan for transfer makeup
     if makeup_transfer and psgan_inference is None:
         try:
-            makeup_transfer_model_path = os.path.join(easyphoto_models_path, "makeup_transfer.pth")
-            face_landmarks_model_path = os.path.join(easyphoto_models_path, "face_landmarks.pth")
+            makeup_transfer_model_path = os.path.join(eas_public_cache_path, "makeup_transfer.pth")
+            face_landmarks_model_path = os.path.join(eas_public_cache_path, "face_landmarks.pth")
             psgan_inference = PSGAN_Inference(
                 "cuda", makeup_transfer_model_path, retinaface_detection, face_skin, face_landmarks_model_path
             )
@@ -2151,7 +2151,7 @@ def easyphoto_video_infer_forward(
 
     # To save the GPU memory, create the face recognition model for computing FaceID if the user intend to show it.
     if display_score and face_recognition is None:
-        face_recognition = pipeline("face_recognition", model="bubbliiiing/cv_retinafce_recognition", model_revision="v1.0.3")
+        face_recognition = pipeline("face_recognition", model=f"{eas_public_cache_path}/cv_retinafce_recognition", model_revision="v1.0.3")
 
     # This is to increase the fault tolerance of the code.
     # If the code exits abnormally, it may cause the model to not function properly on the CPU
@@ -2941,7 +2941,7 @@ def easyphoto_video_infer_forward(
                 try:
                     _outputs = [np.array(_output, np.uint8) for _output in _outputs]
                     _outputs, actual_fps = FIRE_forward(
-                        _outputs, actual_fps, os.path.join(easyphoto_models_path, "flownet.pkl"), video_interpolation_ext, 1, fp16=False
+                        _outputs, actual_fps, os.path.join(eas_public_cache_path, "flownet.pkl"), video_interpolation_ext, 1, fp16=False
                     )
                     _outputs = [Image.fromarray(np.uint8(_output)) for _output in _outputs]
                 except Exception as e:
