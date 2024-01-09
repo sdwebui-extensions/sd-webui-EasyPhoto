@@ -45,8 +45,6 @@ for handler in handlers:
 ep_logger.setLevel("INFO")
 
 
-
-
 def check_scene_valid(lora_path, models_path) -> bool:
     from scripts.sdwebui import read_lora_metadata
     

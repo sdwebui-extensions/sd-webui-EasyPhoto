@@ -599,5 +599,7 @@ try:
     print("TryOn Infer Api Init")
     script_callbacks.on_app_started(easyphoto_tryon_mask_forward_api)
     print("TryOn Mask Infer Api Init")
+    script_callbacks.on_app_started(easyphoto_empty_cache_api)
+    print("Empty Cache Api Init")
 except Exception as e:
     print(e)

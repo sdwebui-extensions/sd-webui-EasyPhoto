@@ -60,10 +60,10 @@ class switch_sd_model_vae(ContextDecorator):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        shared.opts.sd_model_checkpoint = self.origin_sd_model_checkpoint
+        opts.set("sd_model_checkpoint", self.origin_sd_model_checkpoint, is_api=True, run_callbacks=False)
         # SD Web UI will check self.origin_sd_model_checkpoint == shared.opts.sd_model_checkpoint automatically.
         sd_models.reload_model_weights()
-        shared.opts.sd_vae = self.origin_sd_vae
+        opts.set("sd_vae", self.origin_sd_vae, is_api=True, run_callbacks=False)
         # SD Web UI will check self.origin_sd_vae == shared.opts.sd_vae automatically.
         sd_vae.reload_vae_weights()
 
@@ -333,11 +333,13 @@ if video_visible:
 
 def reload_sd_model_vae(sd_model, vae):
     """Reload sd model and vae"""
-    shared.opts.sd_model_checkpoint = sd_model
+    # shared.opts.sd_model_checkpoint = sd_model
+    opts.set("sd_model_checkpoint", sd_model, is_api=True, run_callbacks=False)
     sd_models.reload_model_weights()
-    shared.opts.sd_vae = vae
+    
+    # shared.opts.vae = vae
+    opts.set("sd_vae", vae, is_api=True, run_callbacks=False)
     sd_vae.reload_vae_weights()
-
 
 def refresh_model_vae():
     """Refresh sd model and vae"""

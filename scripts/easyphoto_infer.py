@@ -35,7 +35,7 @@ from scripts.easyphoto_utils import (Face_Skin, FIRE_forward, PSGAN_Inference,
                                      get_controlnet_version,
                                      get_mov_all_images,
                                      modelscope_models_to_cpu,
-                                     modelscope_models_to_gpu, seed_everything,
+                                     modelscope_models_to_gpu, seed_everything, check_scene_valid,
                                      switch_ms_model_cpu, unload_models, cleanup_decorator)
 from scripts.sdwebui import (get_checkpoint_type, get_lora_type,
                              get_scene_prompt, i2i_inpaint_call,
@@ -707,14 +707,23 @@ def easyphoto_infer_forward(
 
     # create modelscope model
     if retinaface_detection is None:
-        retinaface_detection = pipeline(Tasks.face_detection, f"{eas_public_cache_path}/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
+        if shared.cmd_opts.public_cache:
+            retinaface_detection = pipeline(Tasks.face_detection, f"{eas_public_cache_path}/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
+        else:
+            retinaface_detection = pipeline(Tasks.face_detection, "damo/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
     if image_face_fusion is None:
-        image_face_fusion = pipeline(Tasks.image_face_fusion, model=f"{eas_public_cache_path}/cv_unet-image-face-fusion_damo", model_revision="v1.3")
+        if shared.cmd_opts.public_cache:
+            image_face_fusion = pipeline(Tasks.image_face_fusion, model=f"{eas_public_cache_path}/cv_unet-image-face-fusion_damo", model_revision="v1.3")
+        else:
+            image_face_fusion = pipeline(Tasks.image_face_fusion, "damo/cv_unet-image-face-fusion_damo", model_revision="v1.3")
     if face_skin is None:
         face_skin = Face_Skin(os.path.join(eas_public_cache_path, "face_skin.pth"))
     if skin_retouching is None:
         try:
-            skin_retouching = pipeline("skin-retouching-torch", model=f"{eas_public_cache_path}/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
+            if shared.cmd_opts.public_cache:
+                skin_retouching = pipeline("skin-retouching-torch", model=f"{eas_public_cache_path}/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
+            else:
+                skin_retouching = pipeline("skin-retouching-torch", "damo/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
         except Exception as e:
             torch.cuda.empty_cache()
             traceback.print_exc()
@@ -722,13 +731,16 @@ def easyphoto_infer_forward(
     if portrait_enhancement is None or old_super_resolution_method != super_resolution_method:
         try:
             if super_resolution_method == "gpen":
-                portrait_enhancement = pipeline(
-                    Tasks.image_portrait_enhancement, model=f"{eas_public_cache_path}/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
-                )
+                if shared.cmd_opts.public_cache:
+                    portrait_enhancement = pipeline(
+                        Tasks.image_portrait_enhancement, model=f"{eas_public_cache_path}/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
+                    )
+                else:
+                    portrait_enhancement = pipeline(
+                        Tasks.image_portrait_enhancement, "damo/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
+                    )
             elif super_resolution_method == "realesrgan":
-                portrait_enhancement = pipeline(
-                    "image-super-resolution-x2", model=f"{eas_public_cache_path}/cv_rrdb_image-super-resolution_x2", model_revision="v1.0.2"
-                )
+                portrait_enhancement = pipeline("image-super-resolution-x2", model="bubbliiiing/cv_rrdb_image-super-resolution_x2", model_revision="v1.0.2")
             old_super_resolution_method = super_resolution_method
         except Exception as e:
             torch.cuda.empty_cache()
@@ -737,7 +749,7 @@ def easyphoto_infer_forward(
 
     # To save the GPU memory, create the face recognition model for computing FaceID if the user intend to show it.
     if display_score and face_recognition is None:
-        face_recognition = pipeline("face_recognition", model=f"{eas_public_cache_path}/cv_retinafce_recognition", model_revision="v1.0.3")
+        face_recognition = pipeline("face_recognition", model="bubbliiiing/cv_retinafce_recognition", model_revision="v1.0.3")
 
     # psgan for transfer makeup
     if makeup_transfer and psgan_inference is None:
@@ -2109,14 +2121,23 @@ def easyphoto_video_infer_forward(
 
     # create modelscope model
     if retinaface_detection is None:
-        retinaface_detection = pipeline(Tasks.face_detection, f"{eas_public_cache_path}/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
+        if shared.cmd_opts.public_cache:
+            retinaface_detection = pipeline(Tasks.face_detection, f"{eas_public_cache_path}/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
+        else:
+            retinaface_detection = pipeline(Tasks.face_detection, f"damo/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
     if image_face_fusion is None:
-        image_face_fusion = pipeline(Tasks.image_face_fusion, model=f"{eas_public_cache_path}/cv_unet-image-face-fusion_damo", model_revision="v1.3")
+        if shared.cmd_opts.public_cache:
+            image_face_fusion = pipeline(Tasks.image_face_fusion, model=f"{eas_public_cache_path}/cv_unet-image-face-fusion_damo", model_revision="v1.3")
+        else:
+            image_face_fusion = pipeline(Tasks.image_face_fusion, model=f"damo/cv_unet-image-face-fusion_damo", model_revision="v1.3")
     if face_skin is None:
         face_skin = Face_Skin(os.path.join(eas_public_cache_path, "face_skin.pth"))
     if skin_retouching is None:
         try:
-            skin_retouching = pipeline("skin-retouching-torch", model=f"{eas_public_cache_path}/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
+            if shared.cmd_opts.public_cache:
+                skin_retouching = pipeline("skin-retouching-torch", model=f"{eas_public_cache_path}/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
+            else:
+                skin_retouching = pipeline("skin-retouching-torch", model=f"damo/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
         except Exception as e:
             torch.cuda.empty_cache()
             traceback.print_exc()
@@ -2124,12 +2145,17 @@ def easyphoto_video_infer_forward(
     if portrait_enhancement is None or old_super_resolution_method != super_resolution_method:
         try:
             if super_resolution_method == "gpen":
-                portrait_enhancement = pipeline(
-                    Tasks.image_portrait_enhancement, model=f"{eas_public_cache_path}/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
-                )
+                if shared.cmd_opts.public_cache:
+                    portrait_enhancement = pipeline(
+                        Tasks.image_portrait_enhancement, model=f"{eas_public_cache_path}/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
+                    )
+                else:
+                    portrait_enhancement = pipeline(
+                        Tasks.image_portrait_enhancement, "damo/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
+                    )
             elif super_resolution_method == "realesrgan":
                 portrait_enhancement = pipeline(
-                    "image-super-resolution-x2", model=f"{eas_public_cache_path}/cv_rrdb_image-super-resolution_x2", model_revision="v1.0.2"
+                    "image-super-resolution-x2", model="bubbliiiing/cv_rrdb_image-super-resolution_x2", model_revision="v1.0.2"
                 )
             old_super_resolution_method = super_resolution_method
         except Exception as e:
@@ -2152,7 +2178,7 @@ def easyphoto_video_infer_forward(
 
     # To save the GPU memory, create the face recognition model for computing FaceID if the user intend to show it.
     if display_score and face_recognition is None:
-        face_recognition = pipeline("face_recognition", model=f"{eas_public_cache_path}/cv_retinafce_recognition", model_revision="v1.0.3")
+        face_recognition = pipeline("face_recognition", model="bubbliiiing/cv_retinafce_recognition", model_revision="v1.0.3")
 
     # This is to increase the fault tolerance of the code.
     # If the code exits abnormally, it may cause the model to not function properly on the CPU

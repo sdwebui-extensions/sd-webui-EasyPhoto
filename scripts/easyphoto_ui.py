@@ -54,17 +54,7 @@ except ImportError:
 data_dir, models_path, easyphoto_models_path, easyphoto_img2img_samples, easyphoto_txt2img_samples, easyphoto_outpath_samples, easyphoto_video_outpath_samples, user_id_outpath_samples, cloth_id_outpath_samples, scene_id_outpath_samples, cache_log_file_path, tryon_preview_dir, tryon_gallery_dir = get_ui_paths()
 
 
-def get_external_ckpts():
-    external_checkpoints = []
-    external_ckpt_dir = shared.cmd_opts.ckpt_dir if shared.cmd_opts.ckpt_dir else []
-    if len(external_ckpt_dir) > 0:
-        for _checkpoint in os.listdir(external_ckpt_dir):
-            if _checkpoint.endswith(("pth", "safetensors", "ckpt")):
-                external_checkpoints.append(_checkpoint)
-    return external_checkpoints
-
-
-external_checkpoints = get_external_ckpts()
+external_checkpoints = []
 
 
 def checkpoint_refresh_function():
@@ -370,7 +360,7 @@ def on_ui_tabs():
 
                                 # We will update the default training parameters by the checkpoint type.
                                 def update_train_parameters(sd_model_checkpoint):
-                                    checkpoint_type = get_checkpoint_type(sd_model_checkpoint)
+                                    checkpoint_type = get_checkpoint_type(sd_model_checkpoint, models_path)
                                     if checkpoint_type == 3:  # SDXL
                                         return gr.Markdown.update(visible=True), 1024, 600, 32, 16, gr.Checkbox.update(value=False)
                                     return gr.Markdown.update(visible=False), 512, 800, 128, 64, gr.Checkbox.update(value=True)

@@ -139,7 +139,7 @@ if video_visible:
             cn_script = self.cn_script
 
 
-            def hacked_main_entry(self, p: StableDiffusionProcessing):
+            def hacked_main_entry(self, p: StableDiffusionProcessing, x_1, x_2):
                 from scripts import external_code, global_state, hook
                 from scripts.adapter import (Adapter, Adapter_light,
                                              StyleAdapter)
