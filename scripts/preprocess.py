@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 import torch
 from face_process_utils import call_face_crop
+from easyphoto_config import eas_public_cache_path
 from modelscope.outputs import OutputKeys
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
@@ -110,21 +111,21 @@ if __name__ == "__main__":
         """
     )
     # embedding
-    face_recognition = pipeline("face_recognition", model="bubbliiiing/cv_retinafce_recognition", model_revision="v1.0.3")
+    face_recognition = pipeline("face_recognition", model=f"{eas_public_cache_path}/cv_retinafce_recognition", model_revision="v1.0.3")
     # face detection
-    retinaface_detection = pipeline(Tasks.face_detection, "damo/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
+    retinaface_detection = pipeline(Tasks.face_detection, f"{eas_public_cache_path}/cv_resnet50_face-detection_retinaface", model_revision="v2.0.2")
     # semantic segmentation
-    salient_detect = pipeline(Tasks.semantic_segmentation, "damo/cv_u2net_salient-detection", model_revision="v1.0.0")
+    salient_detect = pipeline(Tasks.semantic_segmentation, f"{eas_public_cache_path}/cv_u2net_salient-detection", model_revision="v1.0.0")
     # skin retouching
     try:
-        skin_retouching = pipeline("skin-retouching-torch", model="damo/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
+        skin_retouching = pipeline("skin-retouching-torch", model=f"{eas_public_cache_path}/cv_unet_skin_retouching_torch", model_revision="v1.0.2")
     except Exception as e:
         skin_retouching = None
         logging.info(f"Skin Retouching model load error, but pass. Error info {e}")
     # portrait enhancement
     try:
         portrait_enhancement = pipeline(
-            Tasks.image_portrait_enhancement, model="damo/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
+            Tasks.image_portrait_enhancement, model=f"{eas_public_cache_path}/cv_gpen_image-portrait-enhancement", model_revision="v1.0.0"
         )
     except Exception as e:
         portrait_enhancement = None
